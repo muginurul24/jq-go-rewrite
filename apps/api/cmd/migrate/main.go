@@ -54,6 +54,12 @@ func main() {
 		exitf("resolve migrations directory: %v", err)
 	}
 
+	if needsGooseVersionTable(command, resetAndSeed) {
+		if _, err := goose.EnsureDBVersion(db); err != nil {
+			exitf("ensure goose version table failed: %v", err)
+		}
+	}
+
 	if resetAndSeed || command == "seed" {
 		if strings.EqualFold(cfg.App.Env, "production") && !strings.EqualFold(os.Getenv("ALLOW_DESTRUCTIVE_SEED"), "true") {
 			exitf("refusing to run destructive seed in production without ALLOW_DESTRUCTIVE_SEED=true")
@@ -212,4 +218,17 @@ func latestMigrationVersion(migrationsDir string) (int64, error) {
 	}
 
 	return latest, nil
+}
+
+func needsGooseVersionTable(command string, resetAndSeed bool) bool {
+	if resetAndSeed {
+		return true
+	}
+
+	switch command {
+	case "seed", "down", "redo", "reset", "status":
+		return true
+	default:
+		return false
+	}
 }
