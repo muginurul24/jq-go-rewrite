@@ -1,7 +1,11 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -48,10 +52,23 @@ func NewWebhookHandler(cfg config.Config, queue webhookQueue) *WebhookHandler {
 }
 
 func (h *WebhookHandler) QRIS(w http.ResponseWriter, r *http.Request) {
-	var request qrisWebhookRequest
-	if err := decodeJSON(r, &request); err != nil {
+	values, err := decodeWebhookValues(r)
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, authErrorResponse{Message: "Invalid JSON payload"})
 		return
+	}
+
+	request := qrisWebhookRequest{
+		Amount:     parseWebhookInt(values["amount"]),
+		TerminalID: values["terminal_id"],
+		MerchantID: values["merchant_id"],
+		TrxID:      values["trx_id"],
+		RRN:        optionalWebhookValue(values, "rrn"),
+		CustomRef:  optionalWebhookValue(values, "custom_ref"),
+		Vendor:     optionalWebhookValue(values, "vendor"),
+		Status:     values["status"],
+		CreatedAt:  optionalWebhookValue(values, "created_at"),
+		FinishAt:   optionalWebhookValue(values, "finish_at"),
 	}
 
 	errorsByField := map[string]string{}
@@ -117,10 +134,18 @@ func (h *WebhookHandler) QRIS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *WebhookHandler) Disbursement(w http.ResponseWriter, r *http.Request) {
-	var request disbursementWebhookRequest
-	if err := decodeJSON(r, &request); err != nil {
+	values, err := decodeWebhookValues(r)
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, authErrorResponse{Message: "Invalid JSON payload"})
 		return
+	}
+
+	request := disbursementWebhookRequest{
+		Amount:          parseWebhookInt(values["amount"]),
+		PartnerRefNo:    values["partner_ref_no"],
+		Status:          values["status"],
+		TransactionDate: optionalWebhookValue(values, "transaction_date"),
+		MerchantID:      values["merchant_id"],
 	}
 
 	errorsByField := map[string]string{}
@@ -181,6 +206,86 @@ func trimOptionalPointer(value *string) *string {
 	}
 
 	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+
+	return &trimmed
+}
+
+func decodeWebhookValues(r *http.Request) (map[string]string, error) {
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return map[string]string{}, nil
+	}
+
+	contentType := strings.ToLower(r.Header.Get("Content-Type"))
+	isFormEncoded := strings.Contains(contentType, "application/x-www-form-urlencoded") ||
+		strings.Contains(contentType, "multipart/form-data")
+	looksLikeForm := !bytes.HasPrefix(trimmed, []byte("{")) &&
+		!bytes.HasPrefix(trimmed, []byte("[")) &&
+		bytes.Contains(trimmed, []byte("="))
+
+	if isFormEncoded || looksLikeForm {
+		r.Body = io.NopCloser(bytes.NewReader(raw))
+		if err := r.ParseForm(); err != nil {
+			return nil, err
+		}
+
+		values := make(map[string]string, len(r.PostForm))
+		for key, items := range r.PostForm {
+			if len(items) == 0 {
+				continue
+			}
+			values[key] = strings.TrimSpace(items[0])
+		}
+
+		return values, nil
+	}
+
+	var payload map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(trimmed))
+	decoder.UseNumber()
+	if err := decoder.Decode(&payload); err != nil {
+		return nil, err
+	}
+
+	values := make(map[string]string, len(payload))
+	for key, value := range payload {
+		values[key] = stringifyWebhookValue(value)
+	}
+
+	return values, nil
+}
+
+func stringifyWebhookValue(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(typed)
+	case json.Number:
+		return typed.String()
+	case float64:
+		return fmt.Sprintf("%.0f", typed)
+	default:
+		return strings.TrimSpace(fmt.Sprintf("%v", typed))
+	}
+}
+
+func parseWebhookInt(value string) int64 {
+	number := json.Number(strings.TrimSpace(value))
+	parsed, _ := number.Int64()
+	return parsed
+}
+
+func optionalWebhookValue(values map[string]string, key string) *string {
+	trimmed := strings.TrimSpace(values[key])
 	if trimmed == "" {
 		return nil
 	}

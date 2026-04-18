@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/config"
@@ -135,6 +136,77 @@ func TestWebhookHandlerDisbursementQueuesTask(t *testing.T) {
 	}
 	if queue.disbursementPayload.PartnerRefNo != "wd-001" {
 		t.Fatalf("expected trimmed partner_ref_no, got %q", queue.disbursementPayload.PartnerRefNo)
+	}
+	if queue.disbursementPayload.Status != "failed" {
+		t.Fatalf("expected lowered status, got %q", queue.disbursementPayload.Status)
+	}
+}
+
+func TestWebhookHandlerQRISAcceptsFormEncodedPayload(t *testing.T) {
+	queue := &fakeWebhookQueue{}
+	handler := NewWebhookHandler(config.Config{
+		Integrations: config.IntegrationsConfig{
+			QRIS: config.QRISConfig{GlobalUUID: "merchant-uuid"},
+		},
+	}, queue)
+
+	form := url.Values{
+		"amount":      {"125000"},
+		"terminal_id": {" player-01 "},
+		"merchant_id": {"merchant-uuid"},
+		"trx_id":      {" trx-001 "},
+		"custom_ref":  {" ref-001 "},
+		"status":      {"SUCCESS"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/webhook/qris", bytes.NewBufferString(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recorder := httptest.NewRecorder()
+
+	handler.QRIS(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Code)
+	}
+	if queue.qrisPayload == nil {
+		t.Fatal("expected qris payload to be queued")
+	}
+	if queue.qrisPayload.Amount != 125000 {
+		t.Fatalf("expected amount 125000, got %d", queue.qrisPayload.Amount)
+	}
+	if queue.qrisPayload.Status != "success" {
+		t.Fatalf("expected lowered status, got %q", queue.qrisPayload.Status)
+	}
+}
+
+func TestWebhookHandlerDisbursementAcceptsFormEncodedPayload(t *testing.T) {
+	queue := &fakeWebhookQueue{}
+	handler := NewWebhookHandler(config.Config{
+		Integrations: config.IntegrationsConfig{
+			QRIS: config.QRISConfig{GlobalUUID: "merchant-uuid"},
+		},
+	}, queue)
+
+	form := url.Values{
+		"amount":           {"50000"},
+		"partner_ref_no":   {" wd-001 "},
+		"merchant_id":      {"merchant-uuid"},
+		"status":           {"FAILED"},
+		"transaction_date": {"2026-04-17T12:00:00+07:00"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/webhook/disbursement", bytes.NewBufferString(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recorder := httptest.NewRecorder()
+
+	handler.Disbursement(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Code)
+	}
+	if queue.disbursementPayload == nil {
+		t.Fatal("expected disbursement payload to be queued")
+	}
+	if queue.disbursementPayload.Amount != 50000 {
+		t.Fatalf("expected amount 50000, got %d", queue.disbursementPayload.Amount)
 	}
 	if queue.disbursementPayload.Status != "failed" {
 		t.Fatalf("expected lowered status, got %q", queue.disbursementPayload.Status)
