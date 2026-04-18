@@ -618,14 +618,14 @@ function TransactionDetailOverlay({
   if (isMobile) {
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="max-h-[92svh]">
+        <DrawerContent className="max-h-[92svh] overflow-hidden">
           <DrawerHeader>
             <DrawerTitle>Detail Transaksi</DrawerTitle>
             <DrawerDescription>
               Audit payload, pemain, dan metadata transaksi.
             </DrawerDescription>
           </DrawerHeader>
-          {content}
+          <div className="min-h-0 overflow-y-auto">{content}</div>
         </DrawerContent>
       </Drawer>
     )
@@ -633,14 +633,14 @@ function TransactionDetailOverlay({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92svh] overflow-hidden p-0 sm:max-w-5xl">
+      <DialogContent className="grid max-h-[92svh] grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-0 sm:max-w-5xl">
         <DialogHeader className="p-4 pb-0">
           <DialogTitle>Detail Transaksi</DialogTitle>
           <DialogDescription>
             Audit payload, pemain, dan metadata transaksi.
           </DialogDescription>
         </DialogHeader>
-        {content}
+        <div className="min-h-0 overflow-y-auto">{content}</div>
       </DialogContent>
     </Dialog>
   )

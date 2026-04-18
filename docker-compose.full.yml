@@ -87,6 +87,8 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        VITE_PUBLIC_API_BASE_URL: ${VITE_PUBLIC_API_BASE_URL:-http://localhost:8080/api/v1}
     depends_on:
       api:
         condition: service_healthy

@@ -20,6 +20,11 @@ type pendingQRISExpirer interface {
 	ExpireOverduePendingQRIS(ctx context.Context) (int64, error)
 }
 
+const (
+	settlePendingBalancesSpec = "0 16 * * 1-5"
+	expireOverduePendingSpec  = "@every 1m"
+)
+
 func New(cfg config.Config, logger zerolog.Logger, settler balanceSettler, expirer pendingQRISExpirer) (*cron.Cron, error) {
 	location, err := time.LoadLocation(cfg.App.Timezone)
 	if err != nil {
@@ -28,7 +33,7 @@ func New(cfg config.Config, logger zerolog.Logger, settler balanceSettler, expir
 
 	instance := cron.New(cron.WithLocation(location))
 
-	_, err = instance.AddFunc("0 16 * * 1-5", func() {
+	_, err = instance.AddFunc(settlePendingBalancesSpec, func() {
 		runLogger := logger.With().Str("job", "settle_pending_balances").Logger()
 		if settler == nil {
 			runLogger.Error().Msg("settler is not configured")
@@ -50,7 +55,7 @@ func New(cfg config.Config, logger zerolog.Logger, settler balanceSettler, expir
 		return nil, fmt.Errorf("register settle scheduler: %w", err)
 	}
 
-	_, err = instance.AddFunc("@every 1m", func() {
+	_, err = instance.AddFunc(expireOverduePendingSpec, func() {
 		runLogger := logger.With().Str("job", "expire_overdue_pending_qris").Logger()
 		if expirer == nil {
 			runLogger.Error().Msg("pending qris expirer is not configured")

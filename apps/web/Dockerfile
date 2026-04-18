@@ -4,6 +4,9 @@ WORKDIR /workspace
 
 RUN corepack enable
 
+ARG VITE_PUBLIC_API_BASE_URL
+ENV VITE_PUBLIC_API_BASE_URL=${VITE_PUBLIC_API_BASE_URL}
+
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json apps/web/package.json
 

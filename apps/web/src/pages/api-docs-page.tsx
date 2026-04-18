@@ -42,6 +42,12 @@ type EndpointDoc = {
   params: ParamDoc[]
 }
 
+type ErrorCaseDoc = {
+  status: number
+  when: string
+  response: Record<string, unknown>
+}
+
 type EndpointGroup = {
   group: string
   description: string
@@ -934,6 +940,212 @@ const endpointRequests: Record<string, Record<string, unknown> | null> = {
   "/balance": null,
 }
 
+const invalidJSONError = {
+  status: 400,
+  when: "Payload JSON tidak valid atau body tidak bisa diparse.",
+  response: { message: "Invalid JSON payload" },
+} satisfies ErrorCaseDoc
+
+const forbiddenError = {
+  status: 403,
+  when: "Bearer token toko tidak valid atau context toko tidak terbentuk.",
+  response: { message: "Forbidden" },
+} satisfies ErrorCaseDoc
+
+function validationError(errors: Record<string, string>, when: string): ErrorCaseDoc {
+  return {
+    status: 422,
+    when,
+    response: {
+      message: "Validation failed",
+      errors,
+    },
+  }
+}
+
+function notFoundError(message: string, when: string): ErrorCaseDoc {
+  return {
+    status: 404,
+    when,
+    response: {
+      success: false,
+      message,
+    },
+  }
+}
+
+function upstreamFailureError(message: string, when: string): ErrorCaseDoc {
+  return {
+    status: 500,
+    when,
+    response: {
+      success: false,
+      message,
+    },
+  }
+}
+
+function internalMessageError(message: string, when: string): ErrorCaseDoc {
+  return {
+    status: 500,
+    when,
+    response: { message },
+  }
+}
+
+const endpointErrorCases: Record<string, ErrorCaseDoc[]> = {
+  "/user/create": [
+    invalidJSONError,
+    validationError({ username: "Username is required." }, "Field `username` kosong atau invalid."),
+    validationError({ username: "Username has already been taken." }, "Username lokal sudah dipakai pada toko yang sama."),
+    forbiddenError,
+    upstreamFailureError("Failed to create user on upstream platform", "Upstream NexusGGR menolak pembuatan user."),
+  ],
+  "/user/deposit": [
+    invalidJSONError,
+    validationError({ amount: "Amount must be at least 10000." }, "Nominal deposit di bawah batas minimum."),
+    forbiddenError,
+    notFoundError("Player not found", "Username lokal tidak ditemukan pada toko yang sedang autentikasi."),
+    {
+      status: 400,
+      when: "Saldo lokal `nexusggr` toko tidak cukup untuk melakukan deposit.",
+      response: {
+        success: false,
+        message: "Insufficient balance",
+      },
+    },
+    upstreamFailureError("Failed to deposit user on upstream platform", "Upstream deposit gagal diproses."),
+  ],
+  "/user/withdraw": [
+    invalidJSONError,
+    validationError({ amount: "Amount must be at least 1." }, "Nominal withdraw tidak valid."),
+    forbiddenError,
+    notFoundError("Player not found", "Username lokal tidak ditemukan pada toko yang sedang autentikasi."),
+    {
+      status: 400,
+      when: "Saldo user pada upstream tidak cukup untuk withdraw.",
+      response: {
+        success: false,
+        message: "User has insufficient balance on upstream platform",
+      },
+    },
+    upstreamFailureError("Failed to get user balance from upstream platform", "Lookup saldo user upstream gagal sebelum withdraw."),
+    upstreamFailureError("Failed to withdraw user on upstream platform", "Upstream withdraw gagal diproses."),
+  ],
+  "/user/withdraw-reset": [
+    invalidJSONError,
+    validationError({ username: "Username is required." }, "Mode single-user dipakai tetapi `username` kosong."),
+    forbiddenError,
+    notFoundError("Player not found", "Username lokal tidak ditemukan pada toko yang sedang autentikasi."),
+    upstreamFailureError("Failed to reset withdraw on upstream platform", "Upstream menolak withdraw reset."),
+  ],
+  "/transfer/status": [
+    invalidJSONError,
+    validationError({ agent_sign: "Agent sign is required." }, "Field `agent_sign` kosong."),
+    forbiddenError,
+    notFoundError("Player not found", "Username lokal tidak ditemukan pada toko yang sedang autentikasi."),
+    upstreamFailureError("Failed to get transfer status from upstream platform", "Lookup transfer status ke upstream gagal."),
+  ],
+  "/money/info": [
+    invalidJSONError,
+    validationError({ username: "Username must not exceed 50 characters." }, "Field `username` terlalu panjang."),
+    forbiddenError,
+    notFoundError("Player not found", "Username lokal tidak ditemukan pada toko yang sedang autentikasi."),
+    upstreamFailureError("Failed to get balance information from upstream platform", "Lookup saldo upstream gagal."),
+  ],
+  "/providers": [
+    upstreamFailureError("Failed to get provider list from upstream platform", "NexusGGR provider list gagal diambil."),
+  ],
+  "/games": [
+    invalidJSONError,
+    validationError({ provider_code: "Provider code is required." }, "Field `provider_code` kosong."),
+    upstreamFailureError("Failed to get game list from upstream platform", "NexusGGR game list gagal diambil."),
+  ],
+  "/games/v2": [
+    invalidJSONError,
+    validationError({ provider_code: "Provider code is required." }, "Field `provider_code` kosong."),
+    upstreamFailureError("Failed to get localized game list from upstream platform", "NexusGGR game list v2 gagal diambil."),
+  ],
+  "/game/launch": [
+    invalidJSONError,
+    validationError({ provider_code: "Provider code is required." }, "Field wajib untuk launch game tidak lengkap."),
+    forbiddenError,
+    notFoundError("Player not found", "Username lokal tidak ditemukan pada toko yang sedang autentikasi."),
+    upstreamFailureError("Failed to launch game on upstream platform", "Launch game ditolak upstream."),
+  ],
+  "/game/log": [
+    invalidJSONError,
+    validationError({ game_type: "Game type is required." }, "Parameter log game tidak lengkap."),
+    forbiddenError,
+    notFoundError("Player not found", "Username lokal tidak ditemukan pada toko yang sedang autentikasi."),
+    upstreamFailureError("Failed to get game logs from upstream platform", "Riwayat game gagal diambil dari upstream."),
+  ],
+  "/call/players": [
+    forbiddenError,
+    upstreamFailureError("Failed to get active players from upstream platform", "Daftar player aktif gagal diambil dari upstream."),
+  ],
+  "/call/list": [
+    invalidJSONError,
+    validationError({ provider_code: "Provider code is required." }, "Field `provider_code` atau `game_code` kosong."),
+    upstreamFailureError("Failed to get call list from upstream platform", "Opsi call tidak berhasil diambil dari upstream."),
+  ],
+  "/call/apply": [
+    invalidJSONError,
+    validationError({ call_type: "Call type is required." }, "Payload apply call tidak lengkap."),
+    forbiddenError,
+    notFoundError("Player not found", "Username lokal tidak ditemukan pada toko yang sedang autentikasi."),
+    upstreamFailureError("Failed to apply call on upstream platform", "Apply call ditolak oleh upstream."),
+  ],
+  "/call/history": [
+    invalidJSONError,
+    validationError({ limit: "Limit must be at least 1." }, "Parameter paginasi history tidak valid."),
+    forbiddenError,
+    upstreamFailureError("Failed to get call history from upstream platform", "Riwayat call gagal diambil dari upstream."),
+  ],
+  "/call/cancel": [
+    invalidJSONError,
+    validationError({ call_id: "Call id is required." }, "Field `call_id` kosong."),
+    upstreamFailureError("Failed to cancel call on upstream platform", "Cancel call ditolak upstream."),
+  ],
+  "/control/rtp": [
+    invalidJSONError,
+    validationError({ rtp: "RTP is required." }, "Field control RTP tidak lengkap."),
+    forbiddenError,
+    notFoundError("Player not found", "Username lokal tidak ditemukan pada toko yang sedang autentikasi."),
+    upstreamFailureError("Failed to change RTP on upstream platform", "Perubahan RTP ditolak upstream."),
+  ],
+  "/control/users-rtp": [
+    invalidJSONError,
+    validationError({ user_codes: "At least one user code is required." }, "Daftar `user_codes` kosong."),
+    forbiddenError,
+    notFoundError("Player not found", "Salah satu username lokal tidak ditemukan pada toko yang sedang autentikasi."),
+    upstreamFailureError("Failed to change RTP on upstream platform", "Perubahan RTP multi-user ditolak upstream."),
+  ],
+  "/merchant-active": [
+    invalidJSONError,
+    validationError({ label: "Label is required." }, "Field `label` kosong."),
+    forbiddenError,
+    internalMessageError("Failed to load balance", "Lookup/create saldo lokal toko gagal."),
+  ],
+  "/generate": [
+    invalidJSONError,
+    validationError({ amount: "Amount must be at least 10000." }, "Parameter generate QRIS tidak valid."),
+    forbiddenError,
+    upstreamFailureError("Failed to generate QRIS from upstream provider", "QRIS gagal dibuat di upstream."),
+  ],
+  "/check-status": [
+    invalidJSONError,
+    validationError({ trx_id: "Trx ID is required." }, "Field `trx_id` kosong."),
+    forbiddenError,
+    notFoundError("Transaction not found", "Transaksi QRIS lokal tidak ditemukan pada toko yang sedang autentikasi."),
+    upstreamFailureError("Failed to get QRIS transaction status from upstream provider", "Status transaksi gagal diambil dari upstream."),
+  ],
+  "/balance": [
+    forbiddenError,
+    internalMessageError("Failed to load balance", "Lookup/create saldo lokal toko gagal."),
+  ],
+}
+
 const callbackRequestExamples: Record<string, Record<string, unknown>> = {
   qris: {
     amount: 100000,
@@ -955,6 +1167,11 @@ const callbackResponseExample = {
 
 export function ApiDocsPage() {
   const baseUrl = useMemo(() => {
+    const configuredBaseURL = import.meta.env.VITE_PUBLIC_API_BASE_URL?.trim()
+    if (configuredBaseURL) {
+      return configuredBaseURL.replace(/\/+$/, "")
+    }
+
     if (typeof window === "undefined") {
       return "/api/v1"
     }
@@ -1081,63 +1298,70 @@ export function ApiDocsPage() {
         <section key={group.group} className="grid gap-4">
           <SectionHeader title={group.group} description={group.description} />
 
-          {group.endpoints.map((endpoint) => (
-            <details
-              key={endpoint.path}
-              className="group rounded-[1.35rem] border border-border/70 bg-card/90 shadow-sm"
-            >
-              <summary className="cursor-pointer list-none px-4 py-3.5">
-                <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge
-                      variant={endpoint.method === "GET" ? "outline" : "default"}
-                      className="rounded-full"
-                    >
-                      {endpoint.method}
-                    </Badge>
-                    <code className="font-mono text-sm">{endpoint.path}</code>
-                    <span className="font-medium">{endpoint.name}</span>
+          {group.endpoints.map((endpoint) => {
+            const errorCases = endpointErrorCases[endpoint.path] ?? []
+
+            return (
+              <details
+                key={endpoint.path}
+                className="group rounded-[1.35rem] border border-border/70 bg-card/90 shadow-sm"
+              >
+                <summary className="cursor-pointer list-none px-4 py-3.5">
+                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge
+                        variant={endpoint.method === "GET" ? "outline" : "default"}
+                        className="rounded-full"
+                      >
+                        {endpoint.method}
+                      </Badge>
+                      <code className="font-mono text-sm">{endpoint.path}</code>
+                      <span className="font-medium">{endpoint.name}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {endpoint.params.length > 0 ? `${endpoint.params.length} params` : "No params"}
+                    </span>
                   </div>
-                  <span className="text-xs text-muted-foreground">
-                    {endpoint.params.length > 0 ? `${endpoint.params.length} params` : "No params"}
-                  </span>
+                </summary>
+
+                <div className="grid gap-4 border-t border-border/70 px-4 py-4">
+                  <p className="text-sm leading-6 text-muted-foreground">{endpoint.description}</p>
+
+                  {endpoint.params.length > 0 ? (
+                    <ParamTable title="Parameter" params={endpoint.params} />
+                  ) : (
+                    <Card className="rounded-[1rem] border-dashed border-border/70 bg-background/40 shadow-none">
+                      <CardContent className="px-3.5 py-3 text-sm text-muted-foreground">
+                        Endpoint ini tidak memerlukan parameter.
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {errorCases.length ? (
+                    <ErrorMatrix cases={errorCases} />
+                  ) : null}
+
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    <CodeSnippet
+                      eyebrow="Rust request"
+                      title="Contoh Request"
+                      description="Request example menggunakan Rust `reqwest` dan payload contoh mengikuti field legacy."
+                      code={buildRustRequestSnippet(baseUrl, endpoint.method, endpointRequests[endpoint.path] ?? null, true, endpoint.path)}
+                      language="rust"
+                      onCopy={copySnippet}
+                    />
+                    <CodeSnippet
+                      eyebrow="JSON response"
+                      title="Contoh Response"
+                      description="Response example sama seperti baseline dokumentasi legacy."
+                      code={jsonCode(endpointResponses[endpoint.path] ?? { success: true })}
+                      language="json"
+                      onCopy={copySnippet}
+                    />
+                  </div>
                 </div>
-              </summary>
-
-              <div className="grid gap-4 border-t border-border/70 px-4 py-4">
-                <p className="text-sm leading-6 text-muted-foreground">{endpoint.description}</p>
-
-                {endpoint.params.length > 0 ? (
-                  <ParamTable title="Parameter" params={endpoint.params} />
-                ) : (
-                  <Card className="rounded-[1rem] border-dashed border-border/70 bg-background/40 shadow-none">
-                    <CardContent className="px-3.5 py-3 text-sm text-muted-foreground">
-                      Endpoint ini tidak memerlukan parameter.
-                    </CardContent>
-                  </Card>
-                )}
-
-                <div className="grid gap-4 xl:grid-cols-2">
-                  <CodeSnippet
-                    eyebrow="Rust request"
-                    title="Contoh Request"
-                    description="Request example menggunakan Rust `reqwest` dan payload contoh mengikuti field legacy."
-                    code={buildRustRequestSnippet(baseUrl, endpoint.method, endpointRequests[endpoint.path] ?? null, true, endpoint.path)}
-                    language="rust"
-                    onCopy={copySnippet}
-                  />
-                  <CodeSnippet
-                    eyebrow="JSON response"
-                    title="Contoh Response"
-                    description="Response example sama seperti baseline dokumentasi legacy."
-                    code={jsonCode(endpointResponses[endpoint.path] ?? { success: true })}
-                    language="json"
-                    onCopy={copySnippet}
-                  />
-                </div>
-              </div>
-            </details>
-          ))}
+              </details>
+          )})}
         </section>
       ))}
     </main>
@@ -1247,6 +1471,51 @@ function ParamTable({
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {param.description}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ErrorMatrix({ cases }: { cases: ErrorCaseDoc[] }) {
+  return (
+    <Card className="rounded-[1.1rem] border-border/70 bg-background/50 shadow-none">
+      <CardHeader className="gap-1.5 pb-2">
+        <CardTitle className="text-base tracking-tight">Error matrix</CardTitle>
+        <CardDescription className="leading-6">
+          Status code dan body utama yang benar-benar dipakai handler publik rewrite.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto rounded-[1rem] border border-border/70">
+          <Table className="min-w-[64rem]">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-24">Status</TableHead>
+                <TableHead className="min-w-[16rem]">Kapan terjadi</TableHead>
+                <TableHead className="min-w-[20rem]">Contoh response</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {cases.map((errorCase, index) => (
+                <TableRow key={`${errorCase.status}-${index}`}>
+                  <TableCell className="align-top">
+                    <Badge variant="outline" className="rounded-full font-mono">
+                      {errorCase.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="align-top text-sm leading-6 text-muted-foreground">
+                    {errorCase.when}
+                  </TableCell>
+                  <TableCell className="align-top">
+                    <pre className="overflow-x-auto rounded-xl border border-border/70 bg-background p-3 font-mono text-xs leading-6 whitespace-pre-wrap">
+                      {jsonCode(errorCase.response)}
+                    </pre>
                   </TableCell>
                 </TableRow>
               ))}
