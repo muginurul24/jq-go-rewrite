@@ -11,7 +11,7 @@
     "preview:web": "pnpm --filter web preview",
     "test:web:e2e": "cd apps/web && pnpm e2e",
     "test:web:e2e:managed": "cd apps/web && PLAYWRIGHT_MANAGED_SERVERS=true pnpm e2e",
-    "test:web:e2e:clone": "cd apps/web && pnpm exec playwright test tests/e2e/backoffice-clone-audit.spec.ts",
+    "test:web:e2e:clone": "cd apps/web && PLAYWRIGHT_CLONE_AUDIT=true pnpm exec playwright test tests/e2e/backoffice-clone-audit.spec.ts",
     "test:web:e2e:list": "cd apps/web && pnpm exec playwright test --list",
     "compose:up:infra": "docker compose up -d",
     "compose:down:infra": "docker compose down",

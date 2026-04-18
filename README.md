@@ -241,6 +241,8 @@ E2E_DEV_PASSWORD=justqiu8 \
 pnpm test:web:e2e:clone
 ```
 
+Suite ini memang `opt-in` dan tidak ikut dijalankan oleh CI managed biasa. Ia hanya aktif saat script clone di atas dipakai, karena membutuhkan database clone production dan environment upstream yang siap.
+
 Suite ini memeriksa:
 
 - semua route backoffice utama bisa dibuka

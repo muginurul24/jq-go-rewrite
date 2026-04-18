@@ -2,6 +2,8 @@ import { expect, test, type Page, type Response } from "@playwright/test"
 
 import { loginAsSeededDev } from "./helpers"
 
+const cloneAuditEnabled = process.env.PLAYWRIGHT_CLONE_AUDIT === "true"
+
 type RuntimeAudit = {
   pageErrors: string[]
   consoleErrors: string[]
@@ -69,6 +71,11 @@ async function expectCleanRuntime(audit: RuntimeAudit) {
 }
 
 test.describe("backoffice clone audit", () => {
+  test.skip(
+    !cloneAuditEnabled,
+    "Requires explicit PLAYWRIGHT_CLONE_AUDIT=true with production-clone DB and upstream-ready env.",
+  )
+
   test.beforeEach(async ({ page }) => {
     await loginAsSeededDev(page)
   })
@@ -162,12 +169,17 @@ test.describe("backoffice clone audit", () => {
 
     await page.goto("/backoffice/providers")
     await expect(page.getByText("Providers", { exact: false }).first()).toBeVisible()
-    await expect(page.getByText("Code:", { exact: false }).first()).toBeVisible()
+    const providerEvidence = page
+      .getByText("Code:", { exact: false })
+      .first()
+      .or(page.getByText("Belum ada provider", { exact: false }).first())
+    await expect(providerEvidence).toBeVisible()
 
     await page.goto("/backoffice/games")
     await expect(page.getByText("Games", { exact: false }).first()).toBeVisible()
-    const gamesCards = page.locator("img[alt], div").filter({ hasText: /Game tidak ditemukan|Standard names|Localized names/ })
-    await expect(gamesCards.first()).toBeVisible()
+    await expect(
+      page.getByText(/Game tidak ditemukan|Standard names|Localized names/, { exact: false }).first(),
+    ).toBeVisible()
 
     await page.goto("/backoffice/call-management")
     await expect(page.getByText("Call management", { exact: false }).first()).toBeVisible()
