@@ -1,0 +1,35 @@
+# Node / frontend
+node_modules/
+apps/web/node_modules/
+apps/web/dist/
+apps/web/.vite/
+
+# Go
+bin/
+dist/
+coverage.out
+*.test
+
+# Env
+.env
+.env.local
+.env.*.local
+.venv-ops/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+.codex
+
+# Logs
+*.log
+pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Misc
+tmp/
+.cache/
+.ops/

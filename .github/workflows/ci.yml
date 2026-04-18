@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: justqiuv2_rewrite
+          POSTGRES_USER: justqiu
+          POSTGRES_PASSWORD: justqiu
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U justqiu -d justqiuv2_rewrite"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+      redis:
+        image: redis:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      APP_NAME: JustQiuV2 Rewrite
+      APP_ENV: ci
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8080
+      APP_LOCALE: en
+      APP_TIMEZONE: Asia/Jakarta
+      HTTP_PORT: "8080"
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_DATABASE: justqiuv2_rewrite
+      DB_USERNAME: justqiu
+      DB_PASSWORD: justqiu
+      SESSION_DRIVER: redis
+      SESSION_LIFETIME: "120"
+      SESSION_DOMAIN: localhost
+      SESSION_SECURE_COOKIE: "false"
+      SESSION_SAME_SITE: lax
+      SESSION_SECRET: 0123456789abcdef0123456789abcdef
+      CSRF_SECRET: 0123456789abcdef0123456789abcdef
+      CSRF_TRUSTED_ORIGINS: localhost:5173,127.0.0.1:5173,localhost:4173,127.0.0.1:4173
+      TOKEN_DISPLAY_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
+      QUEUE_CONNECTION: redis
+      CACHE_STORE: redis
+      CACHE_PREFIX: justqiuv2-rewrite-ci
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ""
+      REDIS_DB: "0"
+      REDIS_CACHE_DB: "1"
+      QRIS_BASE_URL: ""
+      QRIS_CLIENT: ""
+      QRIS_CLIENT_KEY: ""
+      QRIS_GLOBAL_UUID: ""
+      NEXUSGGR_BASE_URL: ""
+      NEXUSGGR_AGENT_CODE: ""
+      NEXUSGGR_AGENT_TOKEN: ""
+      QUEUE_WORKER_CONCURRENCY: "10"
+      PROMETHEUS_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+      SMOKE_TOKO_TOKEN: 1|demo-seed-toko-api-token
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.8.1
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/api/go.mod
+
+      - name: Install dependencies
+        run: pnpm install --recursive --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: cd apps/web && pnpm exec playwright install --with-deps chromium
+
+      - name: Seed demo database
+        run: pnpm migrate:seed:demo
+
+      - name: Backend tests and build
+        run: cd apps/api && go test ./... && go build ./...
+
+      - name: Frontend lint and build
+        run: cd apps/web && pnpm lint && pnpm build
+
+      - name: Managed E2E suite
+        run: pnpm test:web:e2e:managed
+
+      - name: Ops preflight
+        run: |
+          pnpm dev:api > /tmp/justqiu-api.log 2>&1 &
+          API_PID=$!
+          trap 'kill ${API_PID} || true' EXIT
+          sleep 5
+          pnpm preflight:staging

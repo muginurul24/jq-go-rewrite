@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: docker.io/library/postgres:17-alpine
+    container_name: justqiuv2-rewrite-postgres
+    environment:
+      POSTGRES_DB: justqiuv2_rewrite
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d justqiuv2_rewrite"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: docker.io/library/redis:8-alpine
+    container_name: justqiuv2-rewrite-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:

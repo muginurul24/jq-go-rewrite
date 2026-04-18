@@ -1,0 +1,13 @@
+node_modules
+apps/web/node_modules
+apps/web/dist
+apps/api/bin
+apps/api/.cache
+.env
+.env.*
+.DS_Store
+coverage
+playwright-report
+test-results
+postgres_data
+redis_data
