@@ -39,7 +39,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestBootstrapUsesDefaultTopupRatioWhenIncomeRowMissingIntegration(t *testing.T) {
+func TestBootstrapUsesTieredTopupRuleOnFreshDatabaseIntegration(t *testing.T) {
 	harness := requireTopupHarness(t)
 	harness.reset(t)
 
@@ -55,6 +55,15 @@ func TestBootstrapUsesDefaultTopupRatioWhenIncomeRowMissingIntegration(t *testin
 
 	if result.TopupRatio != defaultTopupRatio {
 		t.Fatalf("expected default topup ratio %d, got %d", defaultTopupRatio, result.TopupRatio)
+	}
+	if result.TopupRule.ThresholdAmount != discountedTopupThreshold {
+		t.Fatalf("expected threshold %d, got %d", discountedTopupThreshold, result.TopupRule.ThresholdAmount)
+	}
+	if result.TopupRule.BelowThresholdRate != defaultTopupRatio {
+		t.Fatalf("expected below threshold rate %d, got %d", defaultTopupRatio, result.TopupRule.BelowThresholdRate)
+	}
+	if result.TopupRule.AboveThresholdRate != discountedTopupRatio {
+		t.Fatalf("expected above threshold rate %d, got %d", discountedTopupRatio, result.TopupRule.AboveThresholdRate)
 	}
 	if len(result.Tokos) != 0 {
 		t.Fatalf("expected no tokos on fresh database, got %d", len(result.Tokos))

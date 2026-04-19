@@ -148,6 +148,43 @@ func TestProcessQRISCallbackNexusTopupIntegration(t *testing.T) {
 	}
 }
 
+func TestProcessQRISCallbackNexusTopupUsesDiscountedRatioAboveThresholdIntegration(t *testing.T) {
+	harness := requireWebhookIntegrationHarness(t)
+	harness.reset(t)
+
+	ctx := context.Background()
+	harness.seedUserAndToko(t, ctx, 13, 23, 0)
+	harness.seedIncome(t, ctx, 7, 3, 15, 0)
+	harness.seedTransaction(t, ctx, 36, 23, "qris", "deposit", "pending", 1_500_000, "trx-topup-002", `{"purpose":"nexusggr_topup","qris_data":"000201","expired_at":1713330000}`)
+
+	service := NewService(harness.pool, zerolog.Nop(), nil)
+
+	rrn := "RRN-003"
+	vendor := "qris"
+	finishAt := "2026-04-17T12:32:00+07:00"
+	if err := service.ProcessQRISCallback(ctx, jobs.QRISCallbackPayload{
+		Amount:     1_500_000,
+		TerminalID: "terminal-topup-discount",
+		TrxID:      "trx-topup-002",
+		RRN:        &rrn,
+		Vendor:     &vendor,
+		Status:     "success",
+		FinishAt:   &finishAt,
+	}); err != nil {
+		t.Fatalf("process discounted qris topup callback: %v", err)
+	}
+
+	balance := harness.fetchBalance(t, ctx, 23)
+	if balance.Nexusggr != 25_000_000 {
+		t.Fatalf("expected discounted nexusggr balance 25000000, got %d", balance.Nexusggr)
+	}
+
+	income := harness.fetchIncome(t, ctx)
+	if income.Amount != 1_498_200 {
+		t.Fatalf("expected income amount 1498200, got %d", income.Amount)
+	}
+}
+
 func TestProcessQRISCallbackNonSuccessUpdatesStatusWithoutBalanceSideEffectsIntegration(t *testing.T) {
 	harness := requireWebhookIntegrationHarness(t)
 	harness.reset(t)

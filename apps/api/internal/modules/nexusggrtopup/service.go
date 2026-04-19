@@ -19,6 +19,8 @@ const (
 	minimumTopupAmount  int64 = 1000
 	defaultExpireSecond int   = 300
 	defaultTopupRatio   int64 = 7
+	discountedTopupRatio int64 = 6
+	discountedTopupThreshold int64 = 1_000_000
 	topupPurpose              = "nexusggr_topup"
 )
 
@@ -48,16 +50,24 @@ type PendingTopup struct {
 	QrPayload       string `json:"qrPayload"`
 }
 
+type TopupRateRule struct {
+	ThresholdAmount    int64 `json:"thresholdAmount"`
+	BelowThresholdRate int64 `json:"belowThresholdRate"`
+	AboveThresholdRate int64 `json:"aboveThresholdRate"`
+}
+
 type BootstrapResult struct {
 	Tokos        []TokoOption  `json:"tokos"`
 	SelectedToko *TokoOption   `json:"selectedToko,omitempty"`
 	TopupRatio   int64         `json:"topupRatio"`
+	TopupRule    TopupRateRule `json:"topupRule"`
 	PendingTopup *PendingTopup `json:"pendingTopup,omitempty"`
 }
 
 type GenerateResult struct {
 	SelectedToko *TokoOption  `json:"selectedToko,omitempty"`
 	TopupRatio   int64        `json:"topupRatio"`
+	TopupRule    TopupRateRule `json:"topupRule"`
 	PendingTopup PendingTopup `json:"pendingTopup"`
 }
 
@@ -84,11 +94,6 @@ func (s *Service) Bootstrap(ctx context.Context, actor auth.PublicUser, selected
 		return nil, err
 	}
 
-	ratio, err := s.topupRatio(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	var selected *TokoOption
 	if len(tokos) > 0 {
 		selected = &tokos[0]
@@ -105,7 +110,8 @@ func (s *Service) Bootstrap(ctx context.Context, actor auth.PublicUser, selected
 	result := &BootstrapResult{
 		Tokos:        tokos,
 		SelectedToko: selected,
-		TopupRatio:   ratio,
+		TopupRatio:   defaultTopupRatio,
+		TopupRule:    DefaultTopupRateRule(),
 	}
 
 	if selected != nil {
@@ -163,14 +169,12 @@ func (s *Service) Generate(ctx context.Context, actor auth.PublicUser, tokoID in
 		return nil, fmt.Errorf("insert topup transaction: %w", err)
 	}
 
-	ratio, err := s.topupRatio(ctx)
-	if err != nil {
-		return nil, err
-	}
+	ratio := ResolveTopupRatio(amount)
 
 	return &GenerateResult{
 		SelectedToko: toko,
 		TopupRatio:   ratio,
+		TopupRule:    DefaultTopupRateRule(),
 		PendingTopup: PendingTopup{
 			Amount:          amount,
 			TransactionCode: trxID,
@@ -288,20 +292,6 @@ func (s *Service) findAccessibleToko(ctx context.Context, actor auth.PublicUser,
 	return nil, ErrTokoNotFound
 }
 
-func (s *Service) topupRatio(ctx context.Context) (int64, error) {
-	var ratio int64
-	if err := s.db.QueryRow(ctx, `SELECT COALESCE(ggr, 0) FROM incomes ORDER BY id LIMIT 1`).Scan(&ratio); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return defaultTopupRatio, nil
-		}
-		return 0, fmt.Errorf("read topup ratio: %w", err)
-	}
-	if ratio <= 0 {
-		return defaultTopupRatio, nil
-	}
-	return ratio, nil
-}
-
 func (s *Service) restorePendingTopup(ctx context.Context, tokoID int64) (*PendingTopup, error) {
 	transaction, err := s.latestPendingTopup(ctx, tokoID)
 	if err != nil {
@@ -329,6 +319,21 @@ func (s *Service) restorePendingTopup(ctx context.Context, tokoID int64) (*Pendi
 	}
 
 	return pending, nil
+}
+
+func DefaultTopupRateRule() TopupRateRule {
+	return TopupRateRule{
+		ThresholdAmount:    discountedTopupThreshold,
+		BelowThresholdRate: defaultTopupRatio,
+		AboveThresholdRate: discountedTopupRatio,
+	}
+}
+
+func ResolveTopupRatio(amount int64) int64 {
+	if amount > discountedTopupThreshold {
+		return discountedTopupRatio
+	}
+	return defaultTopupRatio
 }
 
 func (s *Service) latestPendingTopup(ctx context.Context, tokoID int64) (*topupTransaction, error) {

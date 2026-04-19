@@ -51,6 +51,11 @@ func TestBackofficeTopupBootstrapUsesFrontendCompatibleJSONKeys(t *testing.T) {
 				NexusggrBalance: 125000,
 			},
 			TopupRatio: 7,
+			TopupRule: nexusggrtopup.TopupRateRule{
+				ThresholdAmount:    1000000,
+				BelowThresholdRate: 7,
+				AboveThresholdRate: 6,
+			},
 			PendingTopup: &nexusggrtopup.PendingTopup{
 				Amount:          100000,
 				TransactionCode: "TRX-001",
@@ -78,6 +83,9 @@ func TestBackofficeTopupBootstrapUsesFrontendCompatibleJSONKeys(t *testing.T) {
 		`"name":"Toko Alpha"`,
 		`"ownerUsername":"owner-a"`,
 		`"nexusggrBalance":125000`,
+		`"thresholdAmount":1000000`,
+		`"belowThresholdRate":7`,
+		`"aboveThresholdRate":6`,
 		`"transactionCode":"TRX-001"`,
 		`"qrPayload":"000201010212"`,
 	} {

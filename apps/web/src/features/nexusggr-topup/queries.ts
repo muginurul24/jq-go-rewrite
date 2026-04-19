@@ -33,6 +33,11 @@ function syncTopupBootstrapCache(
       tokos: previousData?.tokos ?? [],
       selectedToko: response.data.selectedToko ?? previousData?.selectedToko ?? null,
       topupRatio: response.data.topupRatio ?? previousData?.topupRatio ?? 0,
+      topupRule: response.data.topupRule ?? previousData?.topupRule ?? {
+        thresholdAmount: 1_000_000,
+        belowThresholdRate: 7,
+        aboveThresholdRate: 6,
+      },
       pendingTopup:
         response.data.status && response.data.status !== "pending"
           ? null

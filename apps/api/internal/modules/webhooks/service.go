@@ -17,6 +17,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/jobs"
+	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/modules/nexusggrtopup"
 )
 
 const (
@@ -132,7 +133,7 @@ func (s *Service) ProcessQRISCallback(ctx context.Context, payload jobs.QRISCall
 		}
 
 		if isNexusggrTopup {
-			nexusDelta, incomeDelta := calculateNexusTopupAmounts(payload.Amount, income.GGR)
+			nexusDelta, incomeDelta := calculateNexusTopupAmounts(payload.Amount)
 			if _, err := tx.Exec(ctx, `
 				UPDATE balances
 				SET nexusggr = nexusggr + $2, updated_at = CURRENT_TIMESTAMP
@@ -634,12 +635,9 @@ func calculateRegularQRISAmounts(amount int64, feeTransaction int64) (int64, int
 	return int64(math.Round(finalPending)), int64(math.Round(plusIncome))
 }
 
-func calculateNexusTopupAmounts(amount int64, ggr int64) (int64, int64) {
-	if ggr <= 0 {
-		return 0, amount - 1800
-	}
-
-	nexus := float64(amount) * 100 / float64(ggr)
+func calculateNexusTopupAmounts(amount int64) (int64, int64) {
+	ratio := float64(nexusggrtopup.ResolveTopupRatio(amount))
+	nexus := float64(amount) * 100 / ratio
 	return int64(math.Round(nexus)), amount - 1800
 }
 

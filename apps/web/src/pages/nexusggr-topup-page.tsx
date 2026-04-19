@@ -90,14 +90,21 @@ export function NexusggrTopupPage() {
     return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
   }, [currentEpochSecond, pendingTopup?.expiresAt, pendingTopup?.status])
 
-  const topupRatio = bootstrapQuery.data?.data.topupRatio ?? 0
+  const topupRule = bootstrapQuery.data?.data.topupRule ?? {
+    thresholdAmount: 1_000_000,
+    belowThresholdRate: 7,
+    aboveThresholdRate: 6,
+  }
   const selectedToko = tokoOptions.find((item) => item.id === selectedTokoId)
     ?? bootstrapQuery.data?.data.selectedToko
     ?? null
   const parsedAmount = Number(amount.replace(/[^\d]/g, "")) || 0
+  const effectiveTopupRatio = parsedAmount > topupRule.thresholdAmount
+    ? topupRule.aboveThresholdRate
+    : topupRule.belowThresholdRate
   const estimatedCredit =
-    parsedAmount > 0 && topupRatio > 0
-      ? Math.round((parsedAmount * 100) / topupRatio)
+    parsedAmount > 0 && effectiveTopupRatio > 0
+      ? Math.round((parsedAmount * 100) / effectiveTopupRatio)
       : 0
   const estimatedBalance = (selectedToko?.nexusggrBalance ?? 0) + estimatedCredit
 
@@ -156,8 +163,8 @@ export function NexusggrTopupPage() {
       <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr_0.8fr]">
         <TopupStat
           title="Topup ratio"
-          value={topupRatio > 0 ? `${topupRatio}%` : "-"}
-          description="Rasio GGR saat ini dipakai untuk menghitung kredit NexusGGR dari nominal topup."
+          value={effectiveTopupRatio > 0 ? `${effectiveTopupRatio}%` : "-"}
+          description={`Rate aktif untuk nominal saat ini. <= ${currencyFormatter.format(topupRule.thresholdAmount)} memakai ${topupRule.belowThresholdRate}%, di atasnya ${topupRule.aboveThresholdRate}%.`}
           icon={QrCodeIcon}
         />
         <TopupStat
@@ -241,6 +248,10 @@ export function NexusggrTopupPage() {
                     <InfoLine
                       label="Current NexusGGR"
                       value={currencyFormatter.format(selectedToko?.nexusggrBalance ?? 0)}
+                    />
+                    <InfoLine
+                      label="Applied rate"
+                      value={`${effectiveTopupRatio}%`}
                     />
                     <InfoLine
                       label="Estimated credit"

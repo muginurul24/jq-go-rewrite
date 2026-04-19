@@ -15,11 +15,18 @@ export type PendingTopup = {
   qrPayload: string
 }
 
+export type TopupRateRule = {
+  thresholdAmount: number
+  belowThresholdRate: number
+  aboveThresholdRate: number
+}
+
 export type TopupBootstrapResponse = {
   data: {
     tokos: TopupTokoOption[]
     selectedToko?: TopupTokoOption | null
     topupRatio: number
+    topupRule: TopupRateRule
     pendingTopup?: PendingTopup | null
   }
 }
@@ -29,6 +36,7 @@ export type TopupMutationResponse = {
   data: {
     selectedToko?: TopupTokoOption | null
     topupRatio?: number
+    topupRule?: TopupRateRule
     pendingTopup?: PendingTopup | null
     status?: string
   }

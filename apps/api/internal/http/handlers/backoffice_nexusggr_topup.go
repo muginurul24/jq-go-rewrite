@@ -58,6 +58,7 @@ func (h *BackofficeNexusggrTopupHandler) Bootstrap(w http.ResponseWriter, r *htt
 			"tokos":        result.Tokos,
 			"selectedToko": result.SelectedToko,
 			"topupRatio":   result.TopupRatio,
+			"topupRule":    result.TopupRule,
 			"pendingTopup": result.PendingTopup,
 		},
 	})
@@ -98,6 +99,7 @@ func (h *BackofficeNexusggrTopupHandler) Generate(w http.ResponseWriter, r *http
 		"data": map[string]any{
 			"selectedToko": result.SelectedToko,
 			"topupRatio":   result.TopupRatio,
+			"topupRule":    result.TopupRule,
 			"pendingTopup": result.PendingTopup,
 		},
 	})

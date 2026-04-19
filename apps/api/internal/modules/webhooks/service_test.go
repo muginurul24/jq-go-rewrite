@@ -25,13 +25,21 @@ func TestCalculateRegularQRISAmounts(t *testing.T) {
 }
 
 func TestCalculateNexusTopupAmounts(t *testing.T) {
-	nexusDelta, incomeDelta := calculateNexusTopupAmounts(100000, 7)
+	nexusDelta, incomeDelta := calculateNexusTopupAmounts(100000)
 
 	if nexusDelta != 1428571 {
 		t.Fatalf("expected nexus delta 1428571, got %d", nexusDelta)
 	}
 	if incomeDelta != 98200 {
 		t.Fatalf("expected income delta 98200, got %d", incomeDelta)
+	}
+
+	nexusDelta, incomeDelta = calculateNexusTopupAmounts(1_500_000)
+	if nexusDelta != 25000000 {
+		t.Fatalf("expected discounted nexus delta 25000000, got %d", nexusDelta)
+	}
+	if incomeDelta != 1498200 {
+		t.Fatalf("expected discounted income delta 1498200, got %d", incomeDelta)
 	}
 }
 
