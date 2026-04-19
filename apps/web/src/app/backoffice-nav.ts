@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react"
 import {
   ArrowLeftRightIcon,
   BadgeDollarSignIcon,
+  BellRingIcon,
   BookOpenTextIcon,
   Building2Icon,
   ChartNoAxesCombinedIcon,
@@ -36,6 +37,11 @@ export const backofficeNavSections: BackofficeNavSection[] = [
         title: "Operational Pulse",
         to: "/backoffice/operational-pulse",
         icon: ChartNoAxesCombinedIcon,
+      },
+      {
+        title: "Notifications",
+        to: "/backoffice/notifications",
+        icon: BellRingIcon,
       },
     ],
   },
@@ -122,6 +128,10 @@ export const backofficeRouteMeta: Record<
   "/backoffice/operational-pulse": {
     title: "Operational Pulse",
     description: "Chart QRIS dan NexusGGR 7 hari dengan signal operasional real.",
+  },
+  "/backoffice/notifications": {
+    title: "Notifications",
+    description: "Pusat signal operasional, parity database notification, dan alert penting production.",
   },
   "/backoffice/users": {
     title: "Users",

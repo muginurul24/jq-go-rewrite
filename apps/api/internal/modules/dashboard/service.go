@@ -39,10 +39,12 @@ type Service struct {
 }
 
 type OverviewResult struct {
-	GeneratedAt        string              `json:"generatedAt"`
-	Role               string              `json:"role"`
-	Stats              OverviewStats       `json:"stats"`
-	RecentTransactions []RecentTransaction `json:"recentTransactions"`
+	GeneratedAt        string               `json:"generatedAt"`
+	Role               string               `json:"role"`
+	Stats              OverviewStats        `json:"stats"`
+	AlertSummary       OverviewAlertSummary `json:"alertSummary"`
+	Alerts             []OverviewAlert      `json:"alerts"`
+	RecentTransactions []RecentTransaction  `json:"recentTransactions"`
 }
 
 type OverviewStats struct {
@@ -66,6 +68,24 @@ type RecentTransaction struct {
 	Status    string  `json:"status"`
 	Amount    int64   `json:"amount"`
 	CreatedAt string  `json:"createdAt"`
+}
+
+type OverviewAlertSummary struct {
+	UnreadNotifications   int64 `json:"unreadNotifications"`
+	CriticalNotifications int64 `json:"criticalNotifications"`
+	PendingOverdueQris    int64 `json:"pendingOverdueQris"`
+	PendingWithdrawals    int64 `json:"pendingWithdrawals"`
+	LowSettleTokos        int64 `json:"lowSettleTokos"`
+	LowNexusggrTokos      int64 `json:"lowNexusggrTokos"`
+}
+
+type OverviewAlert struct {
+	Key      string `json:"key"`
+	Severity string `json:"severity"`
+	Title    string `json:"title"`
+	Body     string `json:"body"`
+	Count    int64  `json:"count"`
+	Href     string `json:"href"`
 }
 
 type OperationalPulseResult struct {
@@ -94,6 +114,8 @@ type localTotals struct {
 	Settle   int64
 	Nexusggr int64
 }
+
+const lowBalanceAlertThreshold int64 = 100_000
 
 type cachedQRBalance struct {
 	Pending int64 `json:"pending"`
@@ -125,6 +147,11 @@ func NewService(db *pgxpool.Pool, cache *redis.Client, qris qrisClient, nexusggr
 
 func (s *Service) Overview(ctx context.Context, actor auth.PublicUser) (*OverviewResult, error) {
 	totals, err := s.loadLocalTotals(ctx, actor)
+	if err != nil {
+		return nil, err
+	}
+
+	alertSummary, err := s.loadAlertSummary(ctx, actor)
 	if err != nil {
 		return nil, err
 	}
@@ -164,6 +191,8 @@ func (s *Service) Overview(ctx context.Context, actor auth.PublicUser) (*Overvie
 		GeneratedAt:        s.currentTime().UTC().Format(time.RFC3339Nano),
 		Role:               actor.Role,
 		Stats:              stats,
+		AlertSummary:       alertSummary,
+		Alerts:             buildOverviewAlerts(alertSummary),
 		RecentTransactions: recentTransactions,
 	}, nil
 }
@@ -377,6 +406,63 @@ func (s *Service) loadOperationalStats(ctx context.Context, actor auth.PublicUse
 	return stats, nil
 }
 
+func (s *Service) loadAlertSummary(ctx context.Context, actor auth.PublicUser) (OverviewAlertSummary, error) {
+	scopeClause, args := scopeCondition(actor, 1)
+	args = append(args, s.currentTime().Add(-30*time.Minute))
+
+	var summary OverviewAlertSummary
+	query := `
+		SELECT
+			COUNT(*) FILTER (
+				WHERE tx.category = 'qris'
+					AND tx.type = 'deposit'
+					AND tx.status = 'pending'
+					AND tx.created_at < $` + strconv.Itoa(len(args)) + `
+			) AS pending_overdue_qris,
+			COUNT(*) FILTER (
+				WHERE tx.category = 'qris'
+					AND tx.type = 'withdrawal'
+					AND tx.status = 'pending'
+			) AS pending_withdrawals,
+			COUNT(DISTINCT t.id) FILTER (
+				WHERE COALESCE(b.settle, 0) < ` + strconv.FormatInt(lowBalanceAlertThreshold, 10) + `
+			) AS low_settle_tokos,
+			COUNT(DISTINCT t.id) FILTER (
+				WHERE COALESCE(b.nexusggr, 0) < ` + strconv.FormatInt(lowBalanceAlertThreshold, 10) + `
+			) AS low_nexusggr_tokos
+		FROM tokos t
+		LEFT JOIN balances b ON b.toko_id = t.id
+		LEFT JOIN transactions tx ON tx.toko_id = t.id
+		WHERE t.deleted_at IS NULL
+			AND t.is_active = TRUE
+	` + scopeClause
+
+	if err := s.db.QueryRow(ctx, query, args...).Scan(
+		&summary.PendingOverdueQris,
+		&summary.PendingWithdrawals,
+		&summary.LowSettleTokos,
+		&summary.LowNexusggrTokos,
+	); err != nil {
+		return OverviewAlertSummary{}, fmt.Errorf("load dashboard alert summary: %w", err)
+	}
+
+	if err := s.db.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE read_at IS NULL)::bigint AS unread_notifications,
+			COUNT(*) FILTER (
+				WHERE read_at IS NULL
+					AND COALESCE(data->>'status', '') IN ('warning', 'danger')
+			)::bigint AS critical_notifications
+		FROM notifications
+		WHERE notifiable_type = $1
+			AND notifiable_id = $2
+	`, `App\Models\User`, actor.ID).Scan(&summary.UnreadNotifications, &summary.CriticalNotifications); err != nil {
+		return OverviewAlertSummary{}, fmt.Errorf("load dashboard notification summary: %w", err)
+	}
+
+	return summary, nil
+}
+
 func (s *Service) loadExternalQRBalance(ctx context.Context) (*cachedQRBalance, error) {
 	const cacheKey = "dashboard:qr_balance"
 
@@ -396,6 +482,63 @@ func (s *Service) loadExternalQRBalance(ctx context.Context) (*cachedQRBalance, 
 	s.storeCachedJSON(ctx, cacheKey, result)
 
 	return result, nil
+}
+
+func buildOverviewAlerts(summary OverviewAlertSummary) []OverviewAlert {
+	alerts := make([]OverviewAlert, 0, 5)
+
+	if summary.CriticalNotifications > 0 {
+		alerts = append(alerts, OverviewAlert{
+			Key:      "critical-notifications",
+			Severity: "danger",
+			Title:    "Notifikasi kritikal belum dibaca",
+			Body:     "Tindak lanjuti callback gagal atau error operasional yang belum dibaca.",
+			Count:    summary.CriticalNotifications,
+			Href:     "/backoffice/notifications",
+		})
+	}
+	if summary.PendingOverdueQris > 0 {
+		alerts = append(alerts, OverviewAlert{
+			Key:      "pending-overdue-qris",
+			Severity: "warning",
+			Title:    "QRIS pending melewati 30 menit",
+			Body:     "Ada transaksi deposit QRIS yang belum beres melebihi SLA expiry legacy.",
+			Count:    summary.PendingOverdueQris,
+			Href:     "/backoffice/transactions",
+		})
+	}
+	if summary.PendingWithdrawals > 0 {
+		alerts = append(alerts, OverviewAlert{
+			Key:      "pending-withdrawals",
+			Severity: "warning",
+			Title:    "Withdrawal masih pending",
+			Body:     "Ada transfer keluar yang masih menunggu callback disbursement.",
+			Count:    summary.PendingWithdrawals,
+			Href:     "/backoffice/transactions",
+		})
+	}
+	if summary.LowSettleTokos > 0 {
+		alerts = append(alerts, OverviewAlert{
+			Key:      "low-settle-tokos",
+			Severity: "danger",
+			Title:    "Saldo settle toko menipis",
+			Body:     "Beberapa toko punya settle di bawah ambang operasional Rp 100.000.",
+			Count:    summary.LowSettleTokos,
+			Href:     "/backoffice/tokos",
+		})
+	}
+	if summary.LowNexusggrTokos > 0 {
+		alerts = append(alerts, OverviewAlert{
+			Key:      "low-nexusggr-tokos",
+			Severity: "warning",
+			Title:    "Saldo NexusGGR toko menipis",
+			Body:     "Beberapa toko punya pool NexusGGR lokal di bawah Rp 100.000.",
+			Count:    summary.LowNexusggrTokos,
+			Href:     "/backoffice/tokos",
+		})
+	}
+
+	return alerts
 }
 
 func (s *Service) loadExternalAgentBalance(ctx context.Context) (*cachedAgentBalance, error) {

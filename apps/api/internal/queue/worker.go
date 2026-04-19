@@ -11,6 +11,7 @@ import (
 
 	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/config"
 	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/jobs"
+	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/modules/notifications"
 	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/modules/transactions"
 	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/modules/webhooks"
 )
@@ -70,7 +71,8 @@ func NewServer(deps Dependencies) (*asynq.Server, *asynq.ServeMux) {
 		},
 	)
 
-	webhookService := webhooks.NewService(deps.DB, deps.Logger, deps.Queue)
+	notificationService := notifications.NewService(deps.DB, deps.Logger)
+	webhookService := webhooks.NewService(deps.DB, deps.Logger, deps.Queue).WithNotifications(notificationService)
 	transactionService := transactions.NewService(deps.DB)
 
 	mux := NewServeMux(deps.Logger, WorkerServices{

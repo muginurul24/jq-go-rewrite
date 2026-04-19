@@ -14,6 +14,22 @@ export type DashboardOverviewResponse = {
       externalAgentBalance?: number | null
       externalAgentCode?: string | null
     }
+    alertSummary: {
+      unreadNotifications: number
+      criticalNotifications: number
+      pendingOverdueQris: number
+      pendingWithdrawals: number
+      lowSettleTokos: number
+      lowNexusggrTokos: number
+    }
+    alerts: Array<{
+      key: string
+      severity: "info" | "success" | "warning" | "danger"
+      title: string
+      body: string
+      count: number
+      href: string
+    }>
     recentTransactions: Array<{
       id: number
       code?: string | null

@@ -15,7 +15,8 @@ import (
 )
 
 type BackofficeTokosHandler struct {
-	service backofficeTokoService
+	service       backofficeTokoService
+	notifications backofficeTokoNotifications
 }
 
 type tokoPayload struct {
@@ -33,8 +34,17 @@ type backofficeTokoService interface {
 	RegenerateTokenForBackoffice(ctx context.Context, actor auth.PublicUser, tokoID int64) (*tokos.AdminTokoRecord, error)
 }
 
+type backofficeTokoNotifications interface {
+	NotifyTokoCreated(ctx context.Context, ownerUserID int64, tokoName string, ownerName string) error
+}
+
 func NewBackofficeTokosHandler(service backofficeTokoService) *BackofficeTokosHandler {
 	return &BackofficeTokosHandler{service: service}
+}
+
+func (h *BackofficeTokosHandler) WithNotifications(service backofficeTokoNotifications) *BackofficeTokosHandler {
+	h.notifications = service
+	return h
 }
 
 func (h *BackofficeTokosHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -144,6 +154,10 @@ func (h *BackofficeTokosHandler) Create(w http.ResponseWriter, r *http.Request) 
 		"message": "Toko created",
 		"data":    presentTokoDetail(*record),
 	})
+
+	if h.notifications != nil {
+		_ = h.notifications.NotifyTokoCreated(r.Context(), record.UserID, record.Name, record.OwnerName)
+	}
 }
 
 func (h *BackofficeTokosHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -267,9 +281,9 @@ func presentTokoListItem(record tokos.AdminTokoRecord) map[string]any {
 		"tokenPreview":  maskToken(record.Token),
 		"isActive":      record.IsActive,
 		"balances": map[string]any{
-			"pending":   record.Pending,
-			"settle":    record.Settle,
-			"nexusggr":  record.Nexusggr,
+			"pending":  record.Pending,
+			"settle":   record.Settle,
+			"nexusggr": record.Nexusggr,
 		},
 		"createdAt": record.CreatedAt,
 		"updatedAt": record.UpdatedAt,

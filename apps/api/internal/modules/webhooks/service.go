@@ -34,6 +34,13 @@ type Service struct {
 	logger         zerolog.Logger
 	relayScheduler relayScheduler
 	httpClient     *http.Client
+	notifications  notificationWriter
+}
+
+type notificationWriter interface {
+	NotifyDepositSuccess(ctx context.Context, ownerUserID int64, amount int64, isNexusggrTopup bool, transactionCode *string) error
+	NotifyWithdrawalStatusUpdated(ctx context.Context, ownerUserID int64, amount int64, status string, transactionCode *string) error
+	NotifyCallbackDeliveryFailed(ctx context.Context, eventType string, reference string, callbackURL string, statusCode int, failure string) error
 }
 
 type qrisTransaction struct {
@@ -54,6 +61,11 @@ func NewService(db *pgxpool.Pool, logger zerolog.Logger, relay relayScheduler) *
 			Timeout: relayTimeout,
 		},
 	}
+}
+
+func (s *Service) WithNotifications(service notificationWriter) *Service {
+	s.notifications = service
+	return s
 }
 
 func (s *Service) ProcessQRISCallback(ctx context.Context, payload jobs.QRISCallbackPayload) error {
@@ -178,6 +190,14 @@ func (s *Service) ProcessQRISCallback(ctx context.Context, payload jobs.QRISCall
 		}
 	}
 
+	if newStatus == "success" && s.notifications != nil {
+		ownerUserID, err := s.findTokoOwnerUserID(ctx, transaction.TokoID)
+		if err == nil && ownerUserID > 0 {
+			code := payload.TrxID
+			_ = s.notifications.NotifyDepositSuccess(ctx, ownerUserID, payload.Amount, strings.EqualFold(stringValue(decodeNoteMap(transaction.Note)["purpose"]), "nexusggr_topup"), &code)
+		}
+	}
+
 	return nil
 }
 
@@ -283,6 +303,14 @@ func (s *Service) ProcessDisbursementCallback(ctx context.Context, payload jobs.
 		}
 	}
 
+	if s.notifications != nil {
+		ownerUserID, err := s.findTokoOwnerUserID(ctx, transaction.TokoID)
+		if err == nil && ownerUserID > 0 {
+			code := payload.PartnerRefNo
+			_ = s.notifications.NotifyWithdrawalStatusUpdated(ctx, ownerUserID, payload.Amount, newStatus, &code)
+		}
+	}
+
 	return nil
 }
 
@@ -318,6 +346,9 @@ func (s *Service) RelayTokoCallback(ctx context.Context, payload jobs.TokoCallba
 			Str("reference", payload.Reference).
 			Str("callback_url", callbackURL).
 			Msg("toko callback skipped because callback_url is invalid")
+		if s.notifications != nil {
+			_ = s.notifications.NotifyCallbackDeliveryFailed(ctx, payload.EventType, payload.Reference, callbackURL, 0, "invalid callback_url")
+		}
 		return nil
 	}
 
@@ -374,6 +405,10 @@ func (s *Service) RelayTokoCallback(ctx context.Context, payload jobs.TokoCallba
 		Str("callback_url", callbackURL).
 		Err(lastErr).
 		Msg("toko callback delivery failed")
+
+	if s.notifications != nil {
+		_ = s.notifications.NotifyCallbackDeliveryFailed(ctx, payload.EventType, payload.Reference, callbackURL, 0, lastErr.Error())
+	}
 
 	return fmt.Errorf("deliver toko callback: %w", lastErr)
 }
@@ -610,6 +645,20 @@ func calculateNexusTopupAmounts(amount int64, ggr int64) (int64, int64) {
 
 func calculateDisbursementRefund(amount int64, platformFee int64, bankFee int64) int64 {
 	return amount + platformFee + bankFee
+}
+
+func (s *Service) findTokoOwnerUserID(ctx context.Context, tokoID int64) (int64, error) {
+	var userID int64
+	if err := s.db.QueryRow(ctx, `
+		SELECT user_id
+		FROM tokos
+		WHERE id = $1
+		LIMIT 1
+	`, tokoID).Scan(&userID); err != nil {
+		return 0, fmt.Errorf("find toko owner user id: %w", err)
+	}
+
+	return userID, nil
 }
 
 func decodeNoteMap(note *string) map[string]any {

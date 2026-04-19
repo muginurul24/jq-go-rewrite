@@ -5,8 +5,12 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 
+	"github.com/google/uuid"
+
+	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/modules/notifications"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -286,6 +290,10 @@ func Demo(ctx context.Context, db *sql.DB) (*DemoSeedResult, error) {
 		return nil, fmt.Errorf("insert demo transactions: %w", err)
 	}
 
+	if err = seedDemoNotificationsTx(ctx, tx, baseResult.UserID, ownerUserID); err != nil {
+		return nil, err
+	}
+
 	if err = tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit demo seed: %w", err)
 	}
@@ -360,6 +368,125 @@ func seedDevelopmentTx(ctx context.Context, tx *sql.Tx, passwordHash string) (*D
 		IncomeFeeTx:       defaultIncomeFeeTransaction,
 		IncomeFeeWithdraw: defaultIncomeFeeWithdrawal,
 	}, nil
+}
+
+func seedDemoNotificationsTx(ctx context.Context, tx *sql.Tx, devUserID int64, ownerUserID int64) error {
+	devNotifications := []struct {
+		notificationType string
+		payload          notifications.Data
+		read             bool
+	}{
+		{
+			notificationType: notifications.TypeTokoCallbackDeliveryFailedNotification,
+			payload: notifications.Data{
+				Format:    "filament",
+				Title:     "Toko callback gagal",
+				Body:      "Callback DISBURSEMENT untuk reference QRIS-WD-001 ke https://demo.example.test/callback gagal. HTTP 404.",
+				Icon:      "heroicon-o-exclamation-triangle",
+				IconColor: "danger",
+				Status:    "danger",
+				Action: &notifications.Action{
+					Label: "Audit transaksi",
+					URL:   stringPtr("/backoffice/transactions"),
+				},
+			},
+		},
+		{
+			notificationType: notifications.TypeWithdrawalRequestedDevNotification,
+			payload: notifications.Data{
+				Format:    "filament",
+				Title:     "Withdrawal Pending",
+				Body:      "Username demo-owner toko Demo Toko baru saja melakukan withdraw dengan status pending.",
+				Icon:      "heroicon-o-banknotes",
+				IconColor: "warning",
+				Status:    "warning",
+				Action: &notifications.Action{
+					Label: "Audit transaksi",
+					URL:   stringPtr("/backoffice/transactions"),
+				},
+			},
+		},
+		{
+			notificationType: notifications.TypeMonthlyOperationalFeeCollectedNotification,
+			payload: notifications.Data{
+				Format:    "filament",
+				Title:     "Biaya operasional bulanan diproses",
+				Body:      "Potongan settle VPS dan operasional berhasil diambil dari 1 toko dengan total Rp 100.000.",
+				Icon:      "heroicon-o-banknotes",
+				IconColor: "info",
+				Status:    "info",
+				Action: &notifications.Action{
+					Label: "Buka dashboard",
+					URL:   stringPtr("/backoffice"),
+				},
+			},
+			read: true,
+		},
+	}
+
+	for _, item := range devNotifications {
+		payload, err := json.Marshal(item.payload)
+		if err != nil {
+			return fmt.Errorf("marshal demo dev notification: %w", err)
+		}
+
+		readAt := "NULL"
+		if item.read {
+			readAt = "CURRENT_TIMESTAMP"
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO notifications (
+				id,
+				type,
+				notifiable_type,
+				notifiable_id,
+				data,
+				read_at,
+				created_at,
+				updated_at
+			) VALUES ($1, $2, $3, $4, $5, `+readAt+`, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		`, uuid.NewString(), item.notificationType, notifications.UserNotifiableType, devUserID, payload); err != nil {
+			return fmt.Errorf("insert demo dev notification: %w", err)
+		}
+	}
+
+	ownerPayload, err := json.Marshal(notifications.Data{
+		Format:    "filament",
+		Title:     "Topup NexusGGR Berhasil",
+		Body:      "Topup saldo NexusGGR sebesar Rp 150.000 telah berhasil diproses.",
+		Icon:      "heroicon-o-arrow-down-tray",
+		IconColor: "success",
+		Status:    "success",
+		Action: &notifications.Action{
+			Label: "Lihat transaksi",
+			URL:   stringPtr("/backoffice/transactions"),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("marshal demo owner notification: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO notifications (
+			id,
+			type,
+			notifiable_type,
+			notifiable_id,
+			data,
+			read_at,
+			created_at,
+			updated_at
+		) VALUES ($1, $2, $3, $4, $5, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	`, uuid.NewString(), notifications.TypeDepositSuccessUserNotification, notifications.UserNotifiableType, ownerUserID, ownerPayload); err != nil {
+		return fmt.Errorf("insert demo owner notification: %w", err)
+	}
+
+	return nil
+}
+
+func stringPtr(value string) *string {
+	return &value
 }
 
 func issueSeedTokoTokenTx(ctx context.Context, tx *sql.Tx, tokoID int64) (string, error) {

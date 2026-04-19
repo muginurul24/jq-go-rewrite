@@ -21,6 +21,7 @@ import (
 	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/modules/dashboard"
 	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/modules/nexusggrtopup"
 	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/modules/nexusplayers"
+	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/modules/notifications"
 	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/modules/players"
 	qrismodule "github.com/mugiew/justqiuv2-rewrite/apps/api/internal/modules/qris"
 	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/modules/tokos"
@@ -56,22 +57,24 @@ func NewRouter(runtime *app.Runtime) http.Handler {
 	callManagementService := callmanagement.NewService(runtime.DB, nexusggrClient)
 	catalogService := catalog.NewService(runtime.CacheRedis, nexusggrClient)
 	dashboardService := dashboard.NewService(runtime.DB, runtime.CacheRedis, qrisClient, nexusggrClient, runtime.Config.App.Timezone)
+	notificationService := notifications.NewService(runtime.DB, runtime.Logger)
 	nexusPlayerService := nexusplayers.NewService(runtime.DB, playerRepository, nexusggrClient)
 	tokoRepository := tokos.NewRepository(runtime.DB)
 	tokoService := tokos.NewService(runtime.DB, tokoRepository)
 	transactionService := transactions.NewService(runtime.DB)
 	nexusggrTopupService := nexusggrtopup.NewService(runtime.DB, qrisClient)
 	userService := users.NewService(runtime.DB)
-	withdrawalService := withdrawals.NewService(runtime.DB, runtime.Redis, qrisClient)
+	withdrawalService := withdrawals.NewService(runtime.DB, runtime.Redis, qrisClient).WithNotifications(notificationService)
 	qrisService := qrismodule.NewService(runtime.DB, qrisClient, runtime.Queue, runtime.Logger)
 	tokoAPIHandler := handlers.NewTokoAPIHandler(balanceService, catalogService)
 	backofficeCatalogHandler := handlers.NewBackofficeCatalogHandler(catalogService)
 	backofficeBanksHandler := handlers.NewBackofficeBanksHandler(bankService)
 	backofficeCallManagementHandler := handlers.NewBackofficeCallManagementHandler(callManagementService)
 	backofficeDashboardHandler := handlers.NewBackofficeDashboardHandler(dashboardService)
-	backofficeTokosHandler := handlers.NewBackofficeTokosHandler(tokoService)
+	backofficeTokosHandler := handlers.NewBackofficeTokosHandler(tokoService).WithNotifications(notificationService)
 	backofficePlayersHandler := handlers.NewBackofficePlayersHandler(playerService, nexusggrClient)
 	backofficeNexusggrTopupHandler := handlers.NewBackofficeNexusggrTopupHandler(nexusggrTopupService)
+	backofficeNotificationsHandler := handlers.NewBackofficeNotificationsHandler(notificationService)
 	backofficeUsersHandler := handlers.NewBackofficeUsersHandler(userService)
 	backofficeWithdrawalHandler := handlers.NewBackofficeWithdrawalHandler(withdrawalService)
 	legacyPlayerAPIHandler := handlers.NewLegacyPlayerAPIHandler(balanceService, playerService, nexusggrClient)
@@ -118,6 +121,9 @@ func NewRouter(runtime *app.Runtime) http.Handler {
 			r.Use(auth.BackofficeSessionAuth(runtime.SessionManager, authService))
 			r.Get("/dashboard/overview", backofficeDashboardHandler.Overview)
 			r.Get("/dashboard/operational-pulse", backofficeDashboardHandler.OperationalPulse)
+			r.Get("/notifications", backofficeNotificationsHandler.List)
+			r.Post("/notifications/read-all", backofficeNotificationsHandler.MarkAllRead)
+			r.Post("/notifications/{notificationID}/read", backofficeNotificationsHandler.MarkRead)
 			r.Get("/catalog/providers", backofficeCatalogHandler.Providers)
 			r.Get("/catalog/games", backofficeCatalogHandler.Games)
 			r.Get("/call-management/bootstrap", backofficeCallManagementHandler.Bootstrap)

@@ -1,5 +1,6 @@
-import { BellRingIcon, ShieldCheckIcon } from "lucide-react"
+import { ShieldCheckIcon } from "lucide-react"
 
+import { NotificationCenter } from "@/components/notification-center"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -44,10 +45,7 @@ export function SiteHeader({
             <ShieldCheckIcon className="size-4" />
             Session protected
           </Button>
-          <Button variant="outline" size="icon" className="size-9 rounded-full">
-            <BellRingIcon className="size-4" />
-            <span className="sr-only">Notifications</span>
-          </Button>
+          <NotificationCenter />
           <ThemeToggle />
         </div>
       </div>

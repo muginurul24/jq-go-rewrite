@@ -46,6 +46,16 @@ const statusVariant: Record<
   expired: "outline",
 }
 
+const alertVariant: Record<
+  "info" | "success" | "warning" | "danger",
+  "outline" | "default" | "secondary" | "destructive"
+> = {
+  info: "outline",
+  success: "default",
+  warning: "secondary",
+  danger: "destructive",
+}
+
 export function DashboardPage() {
   const overviewQuery = useDashboardOverviewQuery()
   const overview = overviewQuery.data?.data
@@ -236,6 +246,147 @@ export function DashboardPage() {
           ))}
         </motion.section>
       ) : null}
+
+      <motion.section
+        className="grid gap-4 px-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:px-6"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45, delay: 0.17, ease: "easeOut" }}
+      >
+        <Card className="border-border/60 bg-card/85 shadow-sm backdrop-blur">
+          <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle>Operational Alerts</CardTitle>
+              <CardDescription>
+                Ringkasan anomaly state dan notifikasi yang paling perlu ditindak.
+              </CardDescription>
+            </div>
+            <Button asChild variant="outline" className="rounded-xl">
+              <Link to="/backoffice/notifications">Open notification center</Link>
+            </Button>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                {
+                  title: "Unread",
+                  value: overview?.alertSummary.unreadNotifications ?? 0,
+                  description: "Database notifications belum dibaca.",
+                },
+                {
+                  title: "Critical",
+                  value: overview?.alertSummary.criticalNotifications ?? 0,
+                  description: "Signal warning dan danger belum dibaca.",
+                },
+                {
+                  title: "Overdue QRIS",
+                  value: overview?.alertSummary.pendingOverdueQris ?? 0,
+                  description: "Pending deposit QRIS lebih dari 30 menit.",
+                },
+                {
+                  title: "Pending WD",
+                  value: overview?.alertSummary.pendingWithdrawals ?? 0,
+                  description: "Withdrawal menunggu callback disbursement.",
+                },
+              ].map((item) => (
+                <div key={item.title} className="rounded-2xl border border-border/60 bg-background/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
+                    {item.title}
+                  </p>
+                  {overviewQuery.isLoading ? (
+                    <Skeleton className="mt-2 h-8 w-20" />
+                  ) : (
+                    <p className="mt-2 text-3xl font-semibold tracking-tight">
+                      {item.value}
+                    </p>
+                  )}
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                    {item.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <div className="grid gap-3">
+              {overviewQuery.isLoading ? (
+                Array.from({ length: 3 }, (_, index) => (
+                  <div key={index} className="rounded-2xl border border-border/60 p-4">
+                    <Skeleton className="h-4 w-44" />
+                    <Skeleton className="mt-2 h-3 w-full" />
+                  </div>
+                ))
+              ) : overview?.alerts.length ? (
+                overview.alerts.map((alert) => (
+                  <div key={alert.key} className="rounded-2xl border border-border/60 bg-background/70 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-semibold">{alert.title}</p>
+                          <Badge variant={alertVariant[alert.severity]} className="rounded-full">
+                            {alert.count}
+                          </Badge>
+                        </div>
+                        <p className="text-sm leading-6 text-muted-foreground">
+                          {alert.body}
+                        </p>
+                      </div>
+                      <Button asChild variant="outline" size="sm" className="rounded-xl">
+                        <Link to={alert.href}>Open</Link>
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-dashed border-border/60 px-4 py-8 text-center">
+                  <p className="text-sm font-medium">Tidak ada alert aktif</p>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    Dashboard saat ini bersih dari signal yang perlu aksi cepat.
+                  </p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/60 bg-card/85 shadow-sm backdrop-blur">
+          <CardHeader>
+            <CardTitle>Low Balance Watch</CardTitle>
+            <CardDescription>
+              Deteksi toko aktif dengan pool settle atau NexusGGR di bawah ambang operasional.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            {[
+              {
+                title: "Low settle tokos",
+                value: overview?.alertSummary.lowSettleTokos ?? 0,
+                description: "Toko aktif dengan settle di bawah Rp 100.000.",
+              },
+              {
+                title: "Low NexusGGR tokos",
+                value: overview?.alertSummary.lowNexusggrTokos ?? 0,
+                description: "Toko aktif dengan NexusGGR di bawah Rp 100.000.",
+              },
+            ].map((item) => (
+              <div key={item.title} className="rounded-2xl border border-border/60 bg-background/70 p-4">
+                <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
+                  {item.title}
+                </p>
+                {overviewQuery.isLoading ? (
+                  <Skeleton className="mt-2 h-8 w-20" />
+                ) : (
+                  <p className="mt-2 text-3xl font-semibold tracking-tight">{item.value}</p>
+                )}
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  {item.description}
+                </p>
+              </div>
+            ))}
+            <Button asChild variant="outline" className="rounded-xl">
+              <Link to="/backoffice/tokos">Review toko balances</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </motion.section>
 
       <motion.section
         className="px-4 lg:px-6"

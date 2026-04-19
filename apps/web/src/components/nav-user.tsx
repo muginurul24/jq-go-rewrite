@@ -26,6 +26,7 @@ import {
   BellIcon,
   CircleUserRoundIcon,
   EllipsisVerticalIcon,
+  HomeIcon,
   LogOutIcon,
   ShieldCheckIcon,
 } from "lucide-react"
@@ -112,8 +113,14 @@ export function NavUser({
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link to="/backoffice">
-                  <BellIcon />
+                  <HomeIcon />
                   Dashboard
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/backoffice/notifications">
+                  <BellIcon />
+                  Notifications
                 </Link>
               </DropdownMenuItem>
             </DropdownMenuGroup>

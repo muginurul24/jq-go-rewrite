@@ -5,6 +5,7 @@ import { loginAsSeededDev } from "./helpers"
 const routeChecks = [
   { path: "/backoffice", text: "Recent transactions" },
   { path: "/backoffice/operational-pulse", text: "Operational pulse" },
+  { path: "/backoffice/notifications", text: "Notification Center" },
   { path: "/backoffice/users", text: "User management" },
   { path: "/backoffice/tokos", text: "Tokos control" },
   { path: "/backoffice/banks", text: "Banks" },

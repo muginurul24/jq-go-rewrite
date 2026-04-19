@@ -99,9 +99,14 @@ type SubmittedTransaction struct {
 }
 
 type Service struct {
-	db    *pgxpool.Pool
-	redis *redis.Client
-	qris  qrisClient
+	db            *pgxpool.Pool
+	redis         *redis.Client
+	qris          qrisClient
+	notifications notificationWriter
+}
+
+type notificationWriter interface {
+	NotifyWithdrawalRequested(ctx context.Context, ownerUserID int64, ownerUsername string, tokoName string, amount int64, platformFee int64, bankFee int64, transactionCode *string) error
 }
 
 type accessibleToko struct {
@@ -133,6 +138,11 @@ func NewService(db *pgxpool.Pool, redisClient *redis.Client, qrisClient qrisClie
 		redis: redisClient,
 		qris:  qrisClient,
 	}
+}
+
+func (s *Service) WithNotifications(service notificationWriter) *Service {
+	s.notifications = service
+	return s
 }
 
 func (s *Service) Bootstrap(ctx context.Context, actor auth.PublicUser, selectedTokoID *int64) (*BootstrapResult, error) {
@@ -348,6 +358,20 @@ func (s *Service) Submit(ctx context.Context, actor auth.PublicUser, tokoID int6
 
 	if err := s.deleteInquiry(ctx, actor, toko.ID, inquiryID); err != nil {
 		return nil, err
+	}
+
+	if s.notifications != nil {
+		partnerRefNo := cached.PartnerRefNo
+		_ = s.notifications.NotifyWithdrawalRequested(
+			ctx,
+			toko.UserID,
+			toko.OwnerUsername,
+			toko.Name,
+			amount,
+			cached.PlatformFee,
+			cached.BankFee,
+			&partnerRefNo,
+		)
 	}
 
 	inquiry := InquirySummary{

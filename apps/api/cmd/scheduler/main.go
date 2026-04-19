@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/app"
+	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/modules/notifications"
 	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/modules/operationalfees"
 	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/modules/settlements"
 	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/modules/transactions"
@@ -28,7 +29,8 @@ func main() {
 
 	settlementService := settlements.NewService(runtime.DB, runtime.Logger)
 	transactionService := transactions.NewService(runtime.DB)
-	operationalFeeService := operationalfees.NewService(runtime.DB, runtime.Logger)
+	notificationService := notifications.NewService(runtime.DB, runtime.Logger)
+	operationalFeeService := operationalfees.NewService(runtime.DB, runtime.Logger).WithNotifications(notificationService)
 
 	instance, err := scheduler.New(runtime.Config, runtime.Logger, settlementService, transactionService, operationalFeeService)
 	if err != nil {

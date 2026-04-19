@@ -18,8 +18,13 @@ type Result struct {
 }
 
 type Service struct {
-	db     *pgxpool.Pool
-	logger zerolog.Logger
+	db            *pgxpool.Pool
+	logger        zerolog.Logger
+	notifications notificationWriter
+}
+
+type notificationWriter interface {
+	NotifyMonthlyOperationalFeesCollected(ctx context.Context, processedCount int, deductedTotal int64) error
 }
 
 type incomeRecord struct {
@@ -36,6 +41,11 @@ func NewService(db *pgxpool.Pool, logger zerolog.Logger) *Service {
 		db:     db,
 		logger: logger.With().Str("module", "operational_fees").Logger(),
 	}
+}
+
+func (s *Service) WithNotifications(service notificationWriter) *Service {
+	s.notifications = service
+	return s
 }
 
 func (s *Service) CollectMonthlyOperationalFees(ctx context.Context) (*Result, error) {
@@ -120,6 +130,10 @@ func (s *Service) CollectMonthlyOperationalFees(ctx context.Context) (*Result, e
 		Int("processed_count", result.ProcessedCount).
 		Int64("deducted_total", result.DeductedTotal).
 		Msg("collected monthly operational fees")
+
+	if s.notifications != nil && result.DeductedTotal > 0 {
+		_ = s.notifications.NotifyMonthlyOperationalFeesCollected(ctx, result.ProcessedCount, result.DeductedTotal)
+	}
 
 	return result, nil
 }

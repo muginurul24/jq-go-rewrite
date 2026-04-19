@@ -42,4 +42,14 @@ test.describe("backoffice audit and finance shells", () => {
     await page.getByRole("button", { name: "Lanjut ke rekening tujuan" }).click()
     await expect(page.getByText("BCA - 9876543210", { exact: false }).first()).toBeVisible()
   })
+
+  test("notification center and notifications page render seeded database notifications", async ({ page }) => {
+    await page.goto("/backoffice")
+    await page.getByTestId("notification-center-trigger").click()
+    await expect(page.getByText("Withdrawal Pending", { exact: false }).first()).toBeVisible()
+    await page.getByRole("link", { name: "View all" }).click()
+    await expect(page).toHaveURL(/\/backoffice\/notifications$/)
+    await expect(page.getByText("Notification Center", { exact: false }).first()).toBeVisible()
+    await expect(page.getByText("Toko callback gagal", { exact: false }).first()).toBeVisible()
+  })
 })

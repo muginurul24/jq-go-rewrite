@@ -25,6 +25,7 @@ import { ApiDocsPage } from "@/pages/api-docs-page"
 import { BanksPage } from "@/pages/banks-page"
 import { CallManagementPage } from "@/pages/call-management-page"
 import { NexusggrTopupPage } from "@/pages/nexusggr-topup-page"
+import { NotificationsPage } from "@/pages/notifications-page"
 import { PlayersPage } from "@/pages/players-page"
 import { ProfilePage } from "@/pages/profile-page"
 import { ProvidersPage } from "@/pages/providers-page"
@@ -187,6 +188,17 @@ const operationalPulseRoute = createRoute({
   ),
 })
 
+const notificationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/backoffice/notifications",
+  beforeLoad: requireAuth,
+  component: () => (
+    <BackofficePageFrame>
+      <NotificationsPage />
+    </BackofficePageFrame>
+  ),
+})
+
 const tokosRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/backoffice/tokos",
@@ -324,6 +336,7 @@ const routeTree = rootRoute.addChildren([
   registerRoute,
   dashboardRoute,
   operationalPulseRoute,
+  notificationsRoute,
   usersRoute,
   tokosRoute,
   banksRoute,
