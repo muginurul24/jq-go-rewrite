@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -366,6 +367,13 @@ func toIntValue(value any) any {
 		return int(typedValue)
 	case float64:
 		return int(typedValue)
+	case json.Number:
+		if parsed, err := typedValue.Int64(); err == nil {
+			return int(parsed)
+		}
+		if parsed, err := typedValue.Float64(); err == nil {
+			return int(parsed)
+		}
 	case string:
 		trimmed := strings.TrimSpace(typedValue)
 		if parsed, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
@@ -378,6 +386,8 @@ func toIntValue(value any) any {
 	default:
 		return value
 	}
+
+	return value
 }
 
 func coalesce(value any, fallback any) any {

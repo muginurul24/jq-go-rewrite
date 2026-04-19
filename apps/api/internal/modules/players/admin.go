@@ -2,6 +2,7 @@ package players
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -302,6 +303,15 @@ func extractBalance(userPayload map[string]any) int64 {
 			return int64(typed)
 		case float64:
 			return int64(typed)
+		case json.Number:
+			parsed, err := typed.Int64()
+			if err == nil {
+				return parsed
+			}
+			parsedFloat, err := typed.Float64()
+			if err == nil {
+				return int64(parsedFloat)
+			}
 		case string:
 			parsedFloat, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
 			if err == nil {

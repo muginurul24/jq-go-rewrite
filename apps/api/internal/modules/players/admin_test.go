@@ -1,6 +1,9 @@
 package players
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestExtractBalanceParsesDecimalStringsLikeLegacy(t *testing.T) {
 	t.Parallel()
@@ -23,6 +26,16 @@ func TestExtractBalanceParsesDecimalStringsLikeLegacy(t *testing.T) {
 		{
 			name:    "float",
 			payload: map[string]any{"balance": 9000.87},
+			want:    9000,
+		},
+		{
+			name:    "json number integer",
+			payload: map[string]any{"balance": json.Number("60")},
+			want:    60,
+		},
+		{
+			name:    "json number decimal",
+			payload: map[string]any{"balance": json.Number("9000.87")},
 			want:    9000,
 		},
 		{
