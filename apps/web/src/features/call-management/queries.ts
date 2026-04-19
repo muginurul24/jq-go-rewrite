@@ -23,6 +23,7 @@ export function useActivePlayersQuery() {
   return useQuery({
     queryKey: ["backoffice", "call-management", "active-players"],
     queryFn: getActivePlayers,
+    refetchInterval: 5_000,
     staleTime: 10_000,
   })
 }

@@ -102,6 +102,42 @@ func TestBackofficeCallManagementApplyValidatesPayload(t *testing.T) {
 	}
 }
 
+func TestBackofficeCallManagementControlRTPRejectsAboveNinetyFive(t *testing.T) {
+	t.Parallel()
+
+	handler := NewBackofficeCallManagementHandler(&fakeBackofficeCallManagementService{})
+	request := httptest.NewRequest(http.MethodPost, "/backoffice/api/call-management/control-rtp", strings.NewReader(`{"playerId":1,"providerCode":"PG","rtp":96}`))
+	request = request.WithContext(auth.WithCurrentUser(request.Context(), auth.PublicUser{ID: 10, Role: "admin"}))
+	recorder := httptest.NewRecorder()
+
+	handler.ControlRTP(recorder, request)
+
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d", recorder.Code)
+	}
+	if !strings.Contains(recorder.Body.String(), `"rtp":"RTP maksimal 95."`) {
+		t.Fatalf("unexpected control RTP validation response: %s", recorder.Body.String())
+	}
+}
+
+func TestBackofficeCallManagementControlUsersRTPRejectsAboveNinetyFive(t *testing.T) {
+	t.Parallel()
+
+	handler := NewBackofficeCallManagementHandler(&fakeBackofficeCallManagementService{})
+	request := httptest.NewRequest(http.MethodPost, "/backoffice/api/call-management/control-users-rtp", strings.NewReader(`{"rtp":96}`))
+	request = request.WithContext(auth.WithCurrentUser(request.Context(), auth.PublicUser{ID: 10, Role: "admin"}))
+	recorder := httptest.NewRecorder()
+
+	handler.ControlUsersRTP(recorder, request)
+
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d", recorder.Code)
+	}
+	if !strings.Contains(recorder.Body.String(), `"rtp":"RTP maksimal 95."`) {
+		t.Fatalf("unexpected control users RTP validation response: %s", recorder.Body.String())
+	}
+}
+
 func TestBackofficeCallManagementHistoryMapsUnavailableTo502(t *testing.T) {
 	t.Parallel()
 

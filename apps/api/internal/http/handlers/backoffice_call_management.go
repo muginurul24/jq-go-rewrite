@@ -263,6 +263,8 @@ func (h *BackofficeCallManagementHandler) ControlRTP(w http.ResponseWriter, r *h
 	}
 	if payload.RTP < 0 {
 		fieldErrors["rtp"] = "RTP minimal 0."
+	} else if payload.RTP > 95 {
+		fieldErrors["rtp"] = "RTP maksimal 95."
 	}
 	if len(fieldErrors) > 0 {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
@@ -308,6 +310,15 @@ func (h *BackofficeCallManagementHandler) ControlUsersRTP(w http.ResponseWriter,
 			"message": "Validation failed",
 			"errors": map[string]string{
 				"rtp": "RTP minimal 0.",
+			},
+		})
+		return
+	}
+	if payload.RTP > 95 {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			"message": "Validation failed",
+			"errors": map[string]string{
+				"rtp": "RTP maksimal 95.",
 			},
 		})
 		return

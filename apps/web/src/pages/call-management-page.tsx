@@ -26,6 +26,7 @@ import {
 } from "@/features/call-management/queries"
 import { useProvidersQuery } from "@/features/catalog/queries"
 import { isBackofficeRequestError } from "@/lib/backoffice-api"
+import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -59,6 +60,11 @@ export function CallManagementPage() {
   const [playerSearch, setPlayerSearch] = useState("")
   const [historySearch, setHistorySearch] = useState("")
   const [selectedPlayerKey, setSelectedPlayerKey] = useState<string | null>(null)
+  const [applyDialogOpen, setApplyDialogOpen] = useState(false)
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
+  const [pendingCancelCallId, setPendingCancelCallId] = useState<number | null>(null)
+  const [applyCallTypeValue, setApplyCallTypeValue] = useState("1")
+  const [applyCallRtpValue, setApplyCallRtpValue] = useState<number | null>(null)
   const [controlDialogOpen, setControlDialogOpen] = useState(false)
   const [controlUsersDialogOpen, setControlUsersDialogOpen] = useState(false)
   const [controlPlayerId, setControlPlayerId] = useState<string>("")
@@ -73,6 +79,11 @@ export function CallManagementPage() {
   const activePlayersQuery = useActivePlayersQuery()
   const historyQuery = useCallHistoryQuery()
   const providersQuery = useProvidersQuery()
+  const providerOptions = useMemo(() => {
+    const providers = providersQuery.data?.providers ?? []
+    const activeProviders = providers.filter((provider) => Number(provider.status) === 1)
+    return activeProviders.length ? activeProviders : providers
+  }, [providersQuery.data?.providers])
   const selectedPlayer = useMemo(() => {
     if (selectedPlayerKey == null) {
       return null
@@ -133,7 +144,7 @@ export function CallManagementPage() {
           : ""
     const defaultProvider =
       selectedPlayer?.providerCode ||
-      providersQuery.data?.providers[0]?.code ||
+      providerOptions[0]?.code ||
       ""
 
     setControlPlayerId(defaultPlayerId)
@@ -142,9 +153,24 @@ export function CallManagementPage() {
     setControlDialogOpen(true)
   }
 
-  async function handleApply(callTypeValue: number, callRtp: number) {
+  function openApplyCallDialog(callTypeValue: number, callRtp: number) {
     if (!selectedPlayer) {
       toast.error("Pilih active player terlebih dahulu.")
+      return
+    }
+
+    setApplyCallTypeValue(String(callTypeValue))
+    setApplyCallRtpValue(callRtp)
+    setApplyDialogOpen(true)
+  }
+
+  async function handleApply() {
+    if (!selectedPlayer) {
+      toast.error("Pilih active player terlebih dahulu.")
+      return
+    }
+    if (applyCallRtpValue == null) {
+      toast.error("Call RTP belum dipilih.")
       return
     }
 
@@ -153,10 +179,14 @@ export function CallManagementPage() {
         playerId: selectedPlayer.playerId,
         providerCode: selectedPlayer.providerCode,
         gameCode: selectedPlayer.gameCode,
-        callRtp,
-        callTypeValue,
+        callRtp: applyCallRtpValue,
+        callTypeValue: Number(applyCallTypeValue),
       })
       toast.success(`Call berhasil di-apply. Called money: ${String(response.data.calledMoney ?? 0)}`)
+      setApplyDialogOpen(false)
+      void activePlayersQuery.refetch()
+      void historyQuery.refetch()
+      void callListQuery.refetch()
     } catch (error) {
       toast.error(
         isBackofficeRequestError(error)
@@ -166,10 +196,23 @@ export function CallManagementPage() {
     }
   }
 
-  async function handleCancel(callId: number) {
+  function openCancelDialog(callId: number) {
+    setPendingCancelCallId(callId)
+    setCancelDialogOpen(true)
+  }
+
+  async function handleCancel() {
+    if (pendingCancelCallId == null) {
+      toast.error("Call yang akan dibatalkan tidak valid.")
+      return
+    }
+
     try {
-      const response = await cancelMutation.mutateAsync(callId)
+      const response = await cancelMutation.mutateAsync(pendingCancelCallId)
       toast.success(`Call dibatalkan. Canceled money: ${String(response.data.canceledMoney ?? 0)}`)
+      setCancelDialogOpen(false)
+      setPendingCancelCallId(null)
+      void historyQuery.refetch()
     } catch (error) {
       toast.error(
         isBackofficeRequestError(error)
@@ -180,11 +223,17 @@ export function CallManagementPage() {
   }
 
   async function handleControlRtp() {
+    const parsedRtp = Number(controlRtpValue)
+    if (parsedRtp < 0 || parsedRtp > 95) {
+      toast.error("RTP harus di antara 0 sampai 95.")
+      return
+    }
+
     try {
       const response = await controlRtpMutation.mutateAsync({
         playerId: Number(controlPlayerId),
         providerCode: controlProviderCode,
-        rtp: Number(controlRtpValue),
+        rtp: parsedRtp,
       })
       toast.success(`RTP berhasil diubah ke ${String(response.data.changedRtp ?? controlRtpValue)}.`)
       setControlDialogOpen(false)
@@ -198,8 +247,14 @@ export function CallManagementPage() {
   }
 
   async function handleControlUsersRtp() {
+    const parsedRtp = Number(controlUsersRtpValue)
+    if (parsedRtp < 0 || parsedRtp > 95) {
+      toast.error("RTP harus di antara 0 sampai 95.")
+      return
+    }
+
     try {
-      const response = await controlUsersRtpMutation.mutateAsync(Number(controlUsersRtpValue))
+      const response = await controlUsersRtpMutation.mutateAsync(parsedRtp)
       toast.success(`RTP mass update berhasil: ${String(response.data.changedRtp ?? controlUsersRtpValue)}.`)
       setControlUsersDialogOpen(false)
     } catch (error) {
@@ -284,142 +339,147 @@ export function CallManagementPage() {
           </div>
         </CardHeader>
         <CardContent className="grid gap-6">
-          <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+          <Card className="rounded-[1.5rem] border-border/70 bg-background/50">
+            <CardHeader>
+              <CardTitle className="text-base">Active players</CardTitle>
+              <CardDescription>
+                Pilih row player aktif untuk me-load call list berdasarkan provider dan game yang sedang aktif.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4">
+              <div className="relative">
+                <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={playerSearch}
+                  onChange={(event) => setPlayerSearch(event.target.value)}
+                  placeholder="Cari player, toko, provider, atau game..."
+                  className="pl-9"
+                />
+              </div>
+
+              {activePlayersQuery.isLoading ? (
+                <Skeleton className="h-[24rem] rounded-[1.25rem]" />
+              ) : (
+                <div className="overflow-x-auto rounded-[1.25rem] border border-border/70">
+                  <Table className="min-w-[74rem]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>User</TableHead>
+                        <TableHead>Provider</TableHead>
+                        <TableHead>Game</TableHead>
+                        <TableHead>Bet</TableHead>
+                        <TableHead>Balance</TableHead>
+                        <TableHead>Total Debit</TableHead>
+                        <TableHead>Total Credit</TableHead>
+                        <TableHead>Target RTP</TableHead>
+                        <TableHead>Real RTP</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {activePlayers.length ? activePlayers.map((item) => {
+                        const selected = selectedPlayerKey === playerKey(item)
+
+                        return (
+                          <TableRow key={playerKey(item)} data-state={selected ? "selected" : undefined}>
+                            <TableCell>
+                              <div className="flex flex-col">
+                                <span className="font-medium">{item.userLabel}</span>
+                                <span className="text-xs text-muted-foreground">{item.tokoName}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>{item.providerCode}</TableCell>
+                            <TableCell>{item.gameCode}</TableCell>
+                            <TableCell>{String(item.bet ?? "-")}</TableCell>
+                            <TableCell>{String(item.balance ?? "-")}</TableCell>
+                            <TableCell>{String(item.totalDebit ?? "-")}</TableCell>
+                            <TableCell>{String(item.totalCredit ?? "-")}</TableCell>
+                            <TableCell>{String(item.targetRtp ?? "-")}</TableCell>
+                            <TableCell>{String(item.realRtp ?? "-")}</TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant={selected ? "default" : "outline"}
+                                className="rounded-xl"
+                                onClick={() => setSelectedPlayerKey(playerKey(item))}
+                              >
+                                View Calls
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      }) : (
+                        <TableRow>
+                          <TableCell colSpan={10} className="py-12 text-center text-sm text-muted-foreground">
+                            Tidak ada active player yang bisa dipetakan ke scope actor ini.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {selectedPlayer ? (
             <Card className="rounded-[1.5rem] border-border/70 bg-background/50">
               <CardHeader>
-                <CardTitle className="text-base">Active players</CardTitle>
-                <CardDescription>
-                  Pilih row player aktif untuk me-load call list berdasarkan provider dan game yang sedang aktif.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-4">
-                <div className="relative">
-                  <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={playerSearch}
-                    onChange={(event) => setPlayerSearch(event.target.value)}
-                    placeholder="Cari player, toko, provider, atau game..."
-                    className="pl-9"
-                  />
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle className="text-base">Call List</CardTitle>
+                    <CardDescription>
+                      {selectedPlayer.userLabel} - {selectedPlayer.providerCode} / {selectedPlayer.gameCode}
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="w-full rounded-xl sm:w-auto"
+                    onClick={() => setSelectedPlayerKey(null)}
+                  >
+                    Close
+                  </Button>
                 </div>
-
-                {activePlayersQuery.isLoading ? (
-                  <Skeleton className="h-[24rem] rounded-[1.25rem]" />
-                ) : (
+              </CardHeader>
+              <CardContent>
+                {callListQuery.isLoading ? (
+                  <Skeleton className="h-[18rem] rounded-[1.25rem]" />
+                ) : callListQuery.data?.data.length ? (
                   <div className="overflow-x-auto rounded-[1.25rem] border border-border/70">
-                    <Table className="min-w-[52rem]">
+                    <Table className="min-w-[28rem]">
                       <TableHeader>
                         <TableRow>
-                          <TableHead>User</TableHead>
-                          <TableHead>Provider/Game</TableHead>
                           <TableHead>RTP</TableHead>
+                          <TableHead>Type</TableHead>
                           <TableHead className="text-right">Action</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {activePlayers.length ? activePlayers.map((item) => {
-                          const selected =
-                            selectedPlayer?.playerId === item.playerId &&
-                            selectedPlayer?.providerCode === item.providerCode &&
-                            selectedPlayer?.gameCode === item.gameCode
-
-                          return (
-                            <TableRow key={`${item.playerId}-${item.providerCode}-${item.gameCode}`} data-state={selected ? "selected" : undefined}>
-                              <TableCell>
-                                <div className="flex flex-col">
-                                  <span className="font-medium">{item.userLabel}</span>
-                                  <span className="text-xs text-muted-foreground">{item.tokoName}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex flex-col">
-                                  <span className="font-medium">{item.providerCode}</span>
-                                  <span className="text-xs text-muted-foreground">{item.gameCode}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex flex-col">
-                                  <span>Target: {String(item.targetRtp ?? "-")}</span>
-                                  <span className="text-xs text-muted-foreground">Real: {String(item.realRtp ?? "-")}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Button
-                                  variant={selected ? "default" : "outline"}
-                                  className="rounded-xl"
-                                  onClick={() => setSelectedPlayerKey(playerKey(item))}
-                                >
-                                  Load calls
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          )
-                        }) : (
-                          <TableRow>
-                            <TableCell colSpan={4} className="py-12 text-center text-sm text-muted-foreground">
-                              Tidak ada active player yang bisa dipetakan ke scope actor ini.
+                        {callListQuery.data.data.map((item, index) => (
+                          <TableRow key={`${selectedPlayer.playerId}-${String(item.rtp)}-${item.callTypeValue}-${index}`}>
+                            <TableCell>{String(item.rtp ?? "-")}</TableCell>
+                            <TableCell>{item.callType}</TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                className="rounded-xl"
+                                disabled={applyMutation.isPending}
+                                onClick={() => openApplyCallDialog(item.callTypeValue, Number(item.rtp ?? 0))}
+                              >
+                                Apply
+                              </Button>
                             </TableCell>
                           </TableRow>
-                        )}
+                        ))}
                       </TableBody>
                     </Table>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-[1.5rem] border-border/70 bg-background/50">
-              <CardHeader>
-                <CardTitle className="text-base">Call options</CardTitle>
-                <CardDescription>
-                  Pemilihan call mengikuti player aktif terpilih, lalu `called_money` akan mengurangi `nexusggr` lokal seperti legacy page.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-4">
-                <div className="grid gap-3 rounded-[1.25rem] border border-border/70 px-4 py-4">
-                  <InfoLine label="Selected user" value={selectedPlayer?.userLabel ?? "-"} />
-                  <InfoLine label="Provider" value={selectedPlayer?.providerCode ?? "-"} />
-                  <InfoLine label="Game" value={selectedPlayer?.gameCode ?? "-"} />
-                  <InfoLine label="Balance" value={String(selectedPlayer?.balance ?? "-")} />
-                </div>
-
-                {selectedPlayer == null ? (
-                  <div className="rounded-[1.25rem] border border-dashed border-border/70 px-4 py-12 text-center text-sm text-muted-foreground">
-                    Pilih satu active player untuk memuat call list.
-                  </div>
-                ) : callListQuery.isLoading ? (
-                  <Skeleton className="h-[18rem] rounded-[1.25rem]" />
                 ) : (
-                  <div className="grid gap-3">
-                    {callListQuery.data?.data.length ? callListQuery.data.data.map((item, index) => (
-                      <div
-                        key={`${selectedPlayer.playerId}-${index}`}
-                        className="flex flex-col gap-4 rounded-[1.25rem] border border-border/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
-                      >
-                        <div className="space-y-1">
-                          <p className="font-medium">{item.callType}</p>
-                          <p className="text-sm text-muted-foreground">
-                            RTP: {String(item.rtp ?? "-")}
-                          </p>
-                        </div>
-                        <Button
-                          className="w-full rounded-xl sm:w-auto"
-                          disabled={applyMutation.isPending}
-                          onClick={() => void handleApply(item.callTypeValue, Number(item.rtp ?? 0))}
-                        >
-                          Apply call
-                        </Button>
-                      </div>
-                    )) : (
-                      <div className="rounded-[1.25rem] border border-dashed border-border/70 px-4 py-12 text-center text-sm text-muted-foreground">
-                        Tidak ada call option yang tersedia untuk player aktif ini.
-                      </div>
-                    )}
+                  <div className="rounded-[1.25rem] border border-dashed border-border/70 px-4 py-12 text-center text-sm text-muted-foreground">
+                    Tidak ada call option yang tersedia untuk player aktif ini.
                   </div>
                 )}
               </CardContent>
             </Card>
-          </div>
+          ) : null}
 
           <Card className="rounded-[1.5rem] border-border/70 bg-background/50">
             <CardHeader>
@@ -443,11 +503,19 @@ export function CallManagementPage() {
                 <Skeleton className="h-[22rem] rounded-[1.25rem]" />
               ) : (
                 <div className="overflow-x-auto rounded-[1.25rem] border border-border/70">
-                  <Table className="min-w-[52rem]">
+                  <Table className="min-w-[78rem]">
                     <TableHeader>
                       <TableRow>
+                        <TableHead>ID</TableHead>
                         <TableHead>User</TableHead>
-                        <TableHead>Provider/Game</TableHead>
+                        <TableHead>Provider</TableHead>
+                        <TableHead>Game</TableHead>
+                        <TableHead>Bet</TableHead>
+                        <TableHead>Expected</TableHead>
+                        <TableHead>Real</TableHead>
+                        <TableHead>Missed</TableHead>
+                        <TableHead>RTP</TableHead>
+                        <TableHead>Type</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Created</TableHead>
                         <TableHead className="text-right">Action</TableHead>
@@ -456,20 +524,29 @@ export function CallManagementPage() {
                     <TableBody>
                       {historyRecords.length ? historyRecords.map((item) => (
                         <TableRow key={String(item.id)}>
+                          <TableCell>{String(item.id)}</TableCell>
                           <TableCell>
                             <div className="flex flex-col">
                               <span className="font-medium">{item.userLabel}</span>
                               <span className="text-xs text-muted-foreground">{item.tokoName}</span>
                             </div>
                           </TableCell>
+                          <TableCell>{String(item.providerCode ?? "-")}</TableCell>
+                          <TableCell>{String(item.gameCode ?? "-")}</TableCell>
+                          <TableCell>{String(item.bet ?? "-")}</TableCell>
+                          <TableCell>{String(item.expect ?? "-")}</TableCell>
+                          <TableCell>{String(item.real ?? "-")}</TableCell>
+                          <TableCell>{String(item.missed ?? "-")}</TableCell>
+                          <TableCell>{String(item.rtp ?? "-")}</TableCell>
+                          <TableCell>{formatCallType(item.type)}</TableCell>
                           <TableCell>
-                            <div className="flex flex-col">
-                              <span className="font-medium">{String(item.providerCode ?? "-")}</span>
-                              <span className="text-xs text-muted-foreground">{String(item.gameCode ?? "-")}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={item.canCancel ? "secondary" : "outline"} className="rounded-full px-2.5">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "rounded-full border px-2.5 font-medium",
+                                statusBadgeClass(item.status),
+                              )}
+                            >
                               {item.statusLabel}
                             </Badge>
                           </TableCell>
@@ -482,7 +559,7 @@ export function CallManagementPage() {
                                 variant="outline"
                                 className="rounded-xl"
                                 disabled={cancelMutation.isPending}
-                                onClick={() => void handleCancel(Number(item.id))}
+                                onClick={() => openCancelDialog(Number(item.id))}
                               >
                                 <XCircleIcon className="size-4" />
                                 Cancel
@@ -494,7 +571,7 @@ export function CallManagementPage() {
                         </TableRow>
                       )) : (
                         <TableRow>
-                          <TableCell colSpan={5} className="py-12 text-center text-sm text-muted-foreground">
+                          <TableCell colSpan={13} className="py-12 text-center text-sm text-muted-foreground">
                             Belum ada history call yang cocok dengan filter saat ini.
                           </TableCell>
                         </TableRow>
@@ -507,6 +584,86 @@ export function CallManagementPage() {
           </Card>
         </CardContent>
       </Card>
+
+      <Dialog open={applyDialogOpen} onOpenChange={setApplyDialogOpen}>
+        <DialogContent className="max-h-[92svh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Apply Call</DialogTitle>
+            <DialogDescription>
+              Legacy flow tetap mengizinkan operator memilih ulang call type sebelum submit.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <div className="space-y-2">
+              <Label>User Code</Label>
+              <Input value={selectedPlayer?.userLabel ?? "-"} disabled />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Call Type</Label>
+              <Select value={applyCallTypeValue} onValueChange={setApplyCallTypeValue}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Pilih call type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Common Free</SelectItem>
+                  <SelectItem value="2">Buy Bonus Free</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Call RTP</Label>
+              <Input value={String(applyCallRtpValue ?? "-")} disabled />
+            </div>
+
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button variant="outline" className="w-full rounded-xl sm:w-auto" onClick={() => setApplyDialogOpen(false)}>
+                Batal
+              </Button>
+              <Button
+                className="w-full rounded-xl sm:w-auto"
+                disabled={applyMutation.isPending}
+                onClick={() => void handleApply()}
+              >
+                Apply Call
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={cancelDialogOpen}
+        onOpenChange={(open) => {
+          setCancelDialogOpen(open)
+          if (!open) {
+            setPendingCancelCallId(null)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancel Call</DialogTitle>
+            <DialogDescription>
+              Call dengan status waiting akan dibatalkan seperti flow konfirmasi di legacy.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" className="w-full rounded-xl sm:w-auto" onClick={() => setCancelDialogOpen(false)}>
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              className="w-full rounded-xl sm:w-auto"
+              disabled={cancelMutation.isPending}
+              onClick={() => void handleCancel()}
+            >
+              Confirm Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={controlDialogOpen} onOpenChange={setControlDialogOpen}>
         <DialogContent className="max-h-[92svh] overflow-y-auto sm:max-w-xl">
@@ -524,7 +681,7 @@ export function CallManagementPage() {
                   <SelectValue placeholder="Pilih provider" />
                 </SelectTrigger>
                 <SelectContent>
-                  {providersQuery.data?.providers.map((provider) => (
+                  {providerOptions.map((provider) => (
                     <SelectItem key={provider.code} value={provider.code}>
                       {provider.name}
                     </SelectItem>
@@ -556,6 +713,9 @@ export function CallManagementPage() {
                 value={controlRtpValue}
                 onChange={(event) => setControlRtpValue(event.target.value)}
                 placeholder="95"
+                type="number"
+                min={0}
+                max={95}
               />
             </div>
 
@@ -563,7 +723,11 @@ export function CallManagementPage() {
               <Button variant="outline" className="w-full rounded-xl sm:w-auto" onClick={() => setControlDialogOpen(false)}>
                 Batal
               </Button>
-              <Button className="w-full rounded-xl sm:w-auto" onClick={() => void handleControlRtp()}>
+              <Button
+                className="w-full rounded-xl sm:w-auto"
+                disabled={controlRtpMutation.isPending}
+                onClick={() => void handleControlRtp()}
+              >
                 Simpan RTP
               </Button>
             </div>
@@ -587,6 +751,9 @@ export function CallManagementPage() {
                 value={controlUsersRtpValue}
                 onChange={(event) => setControlUsersRtpValue(event.target.value)}
                 placeholder="95"
+                type="number"
+                min={0}
+                max={95}
               />
             </div>
 
@@ -594,7 +761,11 @@ export function CallManagementPage() {
               <Button variant="outline" className="w-full rounded-xl sm:w-auto" onClick={() => setControlUsersDialogOpen(false)}>
                 Batal
               </Button>
-              <Button className="w-full rounded-xl sm:w-auto" onClick={() => void handleControlUsersRtp()}>
+              <Button
+                className="w-full rounded-xl sm:w-auto"
+                disabled={controlUsersRtpMutation.isPending}
+                onClick={() => void handleControlUsersRtp()}
+              >
                 Update semua player
               </Button>
             </div>
@@ -602,21 +773,6 @@ export function CallManagementPage() {
         </DialogContent>
       </Dialog>
     </main>
-  )
-}
-
-function InfoLine({
-  label,
-  value,
-}: {
-  label: string
-  value: string
-}) {
-  return (
-    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="break-words text-sm font-medium sm:text-right">{value}</span>
-    </div>
   )
 }
 
@@ -631,6 +787,41 @@ function formatDateTime(value: string | null) {
   }
 
   return format(parsed, "dd MMM yyyy HH:mm")
+}
+
+function formatCallType(value: string | number | null) {
+  if (value == null) {
+    return "-"
+  }
+
+  const normalized = String(value).trim()
+  if (!normalized) {
+    return "-"
+  }
+
+  return normalized
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1).toLowerCase())
+    .join(" ")
+}
+
+function statusBadgeClass(status: string | number | null) {
+  switch (Number(status)) {
+    case 0:
+      return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+    case 1:
+      return "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300"
+    case 2:
+      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+    case 3:
+      return "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300"
+    case 4:
+      return "border-muted-foreground/20 bg-muted text-muted-foreground"
+    default:
+      return "border-muted-foreground/20 bg-background text-foreground"
+  }
 }
 
 function playerKey(player: ActivePlayerRecord) {
