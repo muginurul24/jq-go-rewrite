@@ -79,7 +79,7 @@ func TestMoneyInfoMapsLocalAgentAndUserPayload(t *testing.T) {
 				Status: 1,
 				User: map[string]any{
 					"user_code": "ext-a",
-					"balance":   9000.0,
+					"balance":   "9000.87",
 				},
 			},
 		},

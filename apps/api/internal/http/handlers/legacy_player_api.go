@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/mugiew/justqiuv2-rewrite/apps/api/internal/auth"
@@ -359,8 +360,21 @@ func toIntValue(value any) any {
 		return typedValue
 	case int64:
 		return int(typedValue)
+	case int32:
+		return int(typedValue)
+	case float32:
+		return int(typedValue)
 	case float64:
 		return int(typedValue)
+	case string:
+		trimmed := strings.TrimSpace(typedValue)
+		if parsed, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+			return int(parsed)
+		}
+		if parsed, err := strconv.ParseFloat(trimmed, 64); err == nil {
+			return int(parsed)
+		}
+		return typedValue
 	default:
 		return value
 	}

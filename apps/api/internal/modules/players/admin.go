@@ -294,11 +294,19 @@ func extractBalance(userPayload map[string]any) int64 {
 		switch typed := rawBalance.(type) {
 		case int64:
 			return typed
+		case int32:
+			return int64(typed)
 		case int:
+			return int64(typed)
+		case float32:
 			return int64(typed)
 		case float64:
 			return int64(typed)
 		case string:
+			parsedFloat, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+			if err == nil {
+				return int64(parsedFloat)
+			}
 			parsed, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
 			if err == nil {
 				return parsed

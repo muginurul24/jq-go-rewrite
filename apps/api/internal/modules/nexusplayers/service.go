@@ -412,10 +412,17 @@ func toInt64(value any) int64 {
 		if err == nil {
 			return parsed
 		}
+		if parsedFloat, err := typedValue.Float64(); err == nil {
+			return int64(parsedFloat)
+		}
 	case string:
-		parsed := json.Number(typedValue)
+		trimmed := strings.TrimSpace(typedValue)
+		parsed := json.Number(trimmed)
 		if value, err := parsed.Int64(); err == nil {
 			return value
+		}
+		if value, err := parsed.Float64(); err == nil {
+			return int64(value)
 		}
 	}
 
